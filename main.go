@@ -3,7 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"os"
+	"path"
 
 	"github.com/bradleyfalzon/ghinstallation"
 	"github.com/google/go-github/v56/github"
@@ -32,27 +36,79 @@ func main() {
 		}
 
 		switch event := event.(type) {
-		case *github.PullRequestEvent:
+		case *github.WorkflowRunEvent:
 			func() {
-				if *event.Action != "opened" {
+				if *event.Action != "completed" {
+					return
+				}
+				if *event.WorkflowRun.Status != "completed" || *event.WorkflowRun.Conclusion != "success" {
 					return
 				}
 
-				owner, repo, number := *event.Repo.Owner.Login, *event.Repo.Name, *event.PullRequest.Number
-				_, _, err = client.Issues.CreateComment(context.Background(),
-					owner,
-					repo,
-					number,
-					&github.IssueComment{
-						Body: github.String(":wave: Hello from wpp deploy!"),
-					})
+				fmt.Println("action completed successfully")
+
+				workflow_id := *event.WorkflowRun.ID
+
+				artifacts, _, err := client.Actions.ListArtifacts(context.Background(), *event.Repo.Owner.Login, *event.Repo.Name, nil)
+
 				if err != nil {
 					fmt.Println(err)
 					return
+				}
+
+				for _, artifact := range artifacts.Artifacts {
+					if *artifact.WorkflowRun.ID == workflow_id {
+						url, _, err := client.Actions.DownloadArtifact(context.Background(), "permafrost06", "contacts-manager-wp", *artifact.ID, 0)
+
+						if err != nil {
+							fmt.Println(err)
+							return
+						}
+
+						DownloadFile(*url, *artifact.Name+".zip")
+
+						owner, repo, issue_num := *event.Repo.Owner.Login, *event.Repo.Name, *event.WorkflowRun.PullRequests[0].Number
+						_, _, err = client.Issues.CreateComment(context.Background(),
+							owner,
+							repo,
+							issue_num,
+							&github.IssueComment{
+								Body: github.String(":wave: Hello from wpp deploy!"),
+							})
+						if err != nil {
+							fmt.Println(err)
+							return
+						}
+						break
+					}
 				}
 			}()
 		}
 	})
 
 	http.ListenAndServe(":3000", nil)
+}
+
+func DownloadFile(url url.URL, filepath string) error {
+
+	// Get the data
+	resp, err := http.Get(url.String())
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// Create the file
+	if filepath == "" {
+		filepath = path.Base(resp.Request.URL.String())
+	}
+	out, err := os.Create(filepath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	// Write the body to file
+	_, err = io.Copy(out, resp.Body)
+	return err
 }
