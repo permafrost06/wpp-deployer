@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -103,7 +104,10 @@ func main() {
 		}
 	})
 
-	http.ListenAndServe(":3000", nil)
+	portPtr := flag.Int("port", 3000, "Specify which port to use, default 3000")
+	flag.Parse()
+
+	http.ListenAndServe(fmt.Sprintf(":%d", *portPtr), nil)
 }
 
 func DownloadFile(url url.URL, filepath string) error {
