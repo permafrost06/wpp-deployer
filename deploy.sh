@@ -10,8 +10,8 @@ sitename="$1"
 plugin_zip_path="$2"
 
 # Create directory
-mkdir -p "/var/www/wordpress/$sitename"
-cd "/var/www/wordpress/$sitename" || exit
+mkdir -p "/var/www/html/wordpress/$sitename"
+cd "/var/www/html/wordpress/$sitename" || exit
 
 # Download WordPress core
 wp core download
