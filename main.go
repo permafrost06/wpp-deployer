@@ -23,6 +23,48 @@ func main() {
 
 	client := github.NewClient(&http.Client{Transport: itr})
 
+	postComment := func(owner string, repo string, issue_num int, body string) {
+		_, _, err = client.Issues.CreateComment(context.Background(),
+			owner,
+			repo,
+			issue_num,
+			&github.IssueComment{
+				Body: github.String(body),
+			})
+		if err != nil {
+			fmt.Println("Could not post comment", err)
+			return
+		}
+	}
+
+	getArtifact := func(workflow_id int64, owner string, repo string) {
+		artifacts, _, err := client.Actions.ListArtifacts(context.Background(), owner, repo, nil)
+
+		if err != nil {
+			fmt.Println("Couldn't get artifacts", err)
+			return
+		}
+
+		for _, artifact := range artifacts.Artifacts {
+			if *artifact.WorkflowRun.ID == workflow_id {
+				url, _, err := client.Actions.DownloadArtifact(context.Background(), "permafrost06", "contacts-manager-wp", *artifact.ID, 0)
+
+				if err != nil {
+					fmt.Println("Couldn't get artifact download url", err)
+					return
+				}
+
+				err = DownloadFile(*url, *artifact.Name+".zip")
+
+				if err != nil {
+					fmt.Println("Couldn't download artifact", err)
+				}
+
+				break
+			}
+		}
+	}
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		payload, err := github.ValidatePayload(r, []byte("wppwebhooksecret"))
 		if err != nil {
@@ -33,48 +75,6 @@ func main() {
 		if err != nil {
 			fmt.Println("Could not parse webhook", err)
 			return
-		}
-
-		getArtifact := func(workflow_id int64) {
-			artifacts, _, err := client.Actions.ListArtifacts(context.Background(), *event.Repo.Owner.Login, *event.Repo.Name, nil)
-
-			if err != nil {
-				fmt.Println("Couldn't get artifacts", err)
-				return
-			}
-
-			for _, artifact := range artifacts.Artifacts {
-				if *artifact.WorkflowRun.ID == workflow_id {
-					url, _, err := client.Actions.DownloadArtifact(context.Background(), "permafrost06", "contacts-manager-wp", *artifact.ID, 0)
-
-					if err != nil {
-						fmt.Println("Couldn't get artifact download url", err)
-						return
-					}
-
-					err = DownloadFile(*url, *artifact.Name+".zip")
-
-					if err != nil {
-						fmt.Println("Couldn't download artifact", err)
-					}
-
-					break
-				}
-			}
-		}
-
-		postComment := func(owner string, repo string, issue_num int, body string) {
-			_, _, err = client.Issues.CreateComment(context.Background(),
-				owner,
-				repo,
-				issue_num,
-				&github.IssueComment{
-					Body: github.String(body),
-				})
-			if err != nil {
-				fmt.Println("Could not post comment", err)
-				return
-			}
 		}
 
 		switch event := event.(type) {
@@ -91,9 +91,10 @@ func main() {
 				fmt.Println("Action completed successfully")
 
 				workflow_id := *event.WorkflowRun.ID
+				owner, repo := *event.Repo.Owner.Login, *event.Repo.Name
 
 				fmt.Println("Getting artifact")
-				getArtifact(workflow_id)
+				getArtifact(workflow_id, owner, repo)
 				postComment(*event.Repo.Owner.Login,
 					*event.Repo.Name,
 					*event.WorkflowRun.PullRequests[0].Number,
