@@ -115,7 +115,7 @@ func main() {
 				fmt.Println("Wordpress site deployed")
 
 				fmt.Println("Posting comment to issue")
-				postComment(owner, repo, issue_num, ":wave: Hello from wpp deploy!")
+				postComment(owner, repo, issue_num, fmt.Sprintf(":wave: Hello from wpp deploy! Access staging site [here](https://rshlog.com/%s)", site_name))
 			}()
 		}
 	})
