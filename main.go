@@ -107,6 +107,7 @@ func main() {
 	portPtr := flag.Int("port", 3000, "Specify which port to use, default 3000")
 	flag.Parse()
 
+	fmt.Println("Listening for webhooks on port", *portPtr)
 	http.ListenAndServe(fmt.Sprintf(":%d", *portPtr), nil)
 }
 
