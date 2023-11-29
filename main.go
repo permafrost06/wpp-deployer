@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
 
 	"github.com/bradleyfalzon/ghinstallation"
@@ -38,12 +39,12 @@ func main() {
 		}
 	}
 
-	getArtifact := func(workflow_id int64, owner string, repo string) {
+	getArtifact := func(workflow_id int64, owner string, repo string) string {
 		artifacts, _, err := client.Actions.ListArtifacts(context.Background(), owner, repo, nil)
 
 		if err != nil {
-			fmt.Println("Couldn't get artifacts", err)
-			return
+			fmt.Println("Couldn't get artifacts")
+			panic(err)
 		}
 
 		for _, artifact := range artifacts.Artifacts {
@@ -51,19 +52,30 @@ func main() {
 				url, _, err := client.Actions.DownloadArtifact(context.Background(), "permafrost06", "contacts-manager-wp", *artifact.ID, 0)
 
 				if err != nil {
-					fmt.Println("Couldn't get artifact download url", err)
-					return
+					fmt.Println("Couldn't get artifact download url")
+					panic(err)
 				}
 
-				err = DownloadFile(*url, *artifact.Name+".zip")
+				path := fmt.Sprintf("/tmp/%s", *artifact.Name+".zip")
+
+				fmt.Println("Downloading artifact")
+				err = DownloadFile(*url, path)
+				fmt.Println("Artifact downloaded:", path)
 
 				if err != nil {
-					fmt.Println("Couldn't download artifact", err)
+					fmt.Println("Couldn't download artifact")
+					panic(err)
 				}
 
-				break
+				return path
 			}
 		}
+		panic("artifact not found")
+	}
+
+	deploySite := func(name string, artifact_path string) {
+		deployCmd := exec.Command("./deploy.sh", name, artifact_path)
+		deployCmd.Run()
 	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -80,7 +92,7 @@ func main() {
 
 		switch event := event.(type) {
 		case *github.WorkflowRunEvent:
-			fmt.Println("WorkflowRunEvent received")
+			fmt.Println("WorkflowRunEvent received", event.WorkflowRun.WorkflowID)
 			func() {
 				if *event.Action != "completed" ||
 					*event.WorkflowRun.Status != "completed" ||
@@ -92,14 +104,18 @@ func main() {
 				fmt.Println("Action completed successfully")
 
 				workflow_id := *event.WorkflowRun.ID
-				owner, repo := *event.Repo.Owner.Login, *event.Repo.Name
+				owner, repo, issue_num := *event.Repo.Owner.Login, *event.Repo.Name, *event.WorkflowRun.PullRequests[0].Number
 
 				fmt.Println("Getting artifact")
-				getArtifact(workflow_id, owner, repo)
-				postComment(*event.Repo.Owner.Login,
-					*event.Repo.Name,
-					*event.WorkflowRun.PullRequests[0].Number,
-					":wave: Hello from wpp deploy!")
+				artifact_path := getArtifact(workflow_id, owner, repo)
+
+				fmt.Println("Creating wordpress site")
+				site_name := fmt.Sprintf("%s-%s-%d", owner, repo, issue_num)
+				deploySite(site_name, artifact_path)
+				fmt.Println("Wordpress site deployed")
+
+				fmt.Println("Posting comment to issue")
+				postComment(owner, repo, issue_num, ":wave: Hello from wpp deploy!")
 			}()
 		}
 	})
