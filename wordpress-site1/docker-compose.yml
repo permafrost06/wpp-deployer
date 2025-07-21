@@ -22,7 +22,7 @@ services:
       MYSQL_PASSWORD: site1pass
       MYSQL_ROOT_PASSWORD: rootpass
     volumes:
-      - ./db-data:/var/lib/mysql
+      - db-data:/var/lib/mysql
     networks:
       - wpp-deployer-network
     restart: unless-stopped
@@ -34,10 +34,13 @@ services:
       - wordpress
     volumes:
       - ./wp-data:/var/www/html
-    entrypoint: ["tail", "-f", "/dev/null"] # So you can exec manually
+    entrypoint: ["tail", "-f", "/dev/null"]
     networks:
       - wpp-deployer-network
     user: "33:33"
+
+volumes:
+  db-data:
 
 networks:
   wpp-deployer-network:
