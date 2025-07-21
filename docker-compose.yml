@@ -1,95 +1,10 @@
 services:
-  wordpress:
-    image: wordpress:6.8.2-apache
-    restart: always
-    environment:
-      WORDPRESS_DB_HOST: db
-      WORDPRESS_DB_NAME: wordpress
-      WORDPRESS_DB_USER: wordpress
-      WORDPRESS_DB_PASSWORD: wordpress
-    volumes:
-      - wordpress_data:/var/www/html
-
-  db:
-    image: mysql:5.7
-    restart: always
-    environment:
-      MYSQL_DATABASE: wordpress
-      MYSQL_USER: wordpress
-      MYSQL_PASSWORD: wordpress
-      MYSQL_RANDOM_ROOT_PASSWORD: "1"
-    volumes:
-      - db_data:/var/lib/mysql
-
-  wpcli:
-    image: wordpress:cli
-    entrypoint: wp
-    depends_on:
-      - wordpress
-      - db
-    volumes:
-      - wordpress_data:/var/www/html
-    working_dir: /var/www/html
-    environment:
-      WORDPRESS_DB_HOST: db
-      WORDPRESS_DB_NAME: wordpress
-      WORDPRESS_DB_USER: wordpress
-      WORDPRESS_DB_PASSWORD: wordpress
-    user: "33:33"
-
-  wordpress2:
-    image: wordpress:6.8.2-apache
-    restart: always
-    environment:
-      WORDPRESS_DB_HOST: db2
-      WORDPRESS_DB_NAME: wordpress
-      WORDPRESS_DB_USER: wordpress
-      WORDPRESS_DB_PASSWORD: wordpress
-    volumes:
-      - wordpress_2_data:/var/www/html
-
-  db2:
-    image: mysql:5.7
-    restart: always
-    environment:
-      MYSQL_DATABASE: wordpress
-      MYSQL_USER: wordpress
-      MYSQL_PASSWORD: wordpress
-      MYSQL_RANDOM_ROOT_PASSWORD: "1"
-    volumes:
-      - db_2_data:/var/lib/mysql
-
-  wpcli2:
-    image: wordpress:cli
-    entrypoint: wp
-    depends_on:
-      - wordpress2
-      - db2
-    volumes:
-      - wordpress_2_data:/var/www/html
-    working_dir: /var/www/html
-    environment:
-      WORDPRESS_DB_HOST: db2
-      WORDPRESS_DB_NAME: wordpress
-      WORDPRESS_DB_USER: wordpress
-      WORDPRESS_DB_PASSWORD: wordpress
-    user: "33:33"
-
   nginx:
     image: nginx:alpine
-    depends_on:
-      - wordpress
-      - wordpress2
+    container_name: wpp-deployer-nginx
     ports:
-      - 80:80
+      - "80:80"
     volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    volumes_from:
-      - wordpress
-      - wordpress2
-
-volumes:
-  wordpress_data:
-  db_data:
-  wordpress_2_data:
-  db_2_data:
+      - ./html:/usr/share/nginx/html:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    restart: unless-stopped
