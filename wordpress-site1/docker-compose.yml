@@ -34,9 +34,13 @@ services:
       - wordpress
     volumes:
       - ./wp-data:/var/www/html
-    entrypoint: ["tail", "-f", "/dev/null"]
     networks:
       - wpp-deployer-network
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_NAME: site1
+      WORDPRESS_DB_USER: site1
+      WORDPRESS_DB_PASSWORD: site1pass
     user: "33:33"
 
 volumes:
