@@ -6,7 +6,7 @@ services:
       - "80:80"
     volumes:
       - ./html:/usr/share/nginx/html:ro
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx-config:/etc/nginx/conf.d:ro
     networks:
       - wpp-deployer-network
     restart: unless-stopped
