@@ -36,6 +36,7 @@ services:
       - ./wp-data:/var/www/html
     networks:
       - wpp-deployer-network
+    entrypoint: wp
     environment:
       WORDPRESS_DB_HOST: db
       WORDPRESS_DB_NAME: site1
