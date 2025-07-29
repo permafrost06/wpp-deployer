@@ -269,25 +269,9 @@ func (w *WPPDeployer) Exec(sitename string, args []string, reloadNginx bool) err
 }
 
 func (w *WPPDeployer) ExecAll(args []string, reloadNginx bool) error {
-	var sites []string
-
-	err := filepath.WalkDir(w.workDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if d.IsDir() && strings.HasPrefix(d.Name(), "wordpress-") {
-			dockerComposePath := filepath.Join(path, "docker-compose.yml")
-			if _, err := os.Stat(dockerComposePath); err == nil {
-				siteName := strings.TrimPrefix(d.Name(), "wordpress-")
-				sites = append(sites, siteName)
-			}
-		}
-		return nil
-	})
-
+	sites, err := w.List()
 	if err != nil {
-		return fmt.Errorf("failed to scan for sites: %w", err)
+		return fmt.Errorf("failed to get sites list: %w", err)
 	}
 
 	if len(sites) == 0 {
@@ -311,6 +295,31 @@ func (w *WPPDeployer) ExecAll(args []string, reloadNginx bool) error {
 	}
 
 	return nil
+}
+
+func (w *WPPDeployer) List() ([]string, error) {
+	var sites []string
+
+	err := filepath.WalkDir(w.workDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if d.IsDir() && strings.HasPrefix(d.Name(), "wordpress-") {
+			dockerComposePath := filepath.Join(path, "docker-compose.yml")
+			if _, err := os.Stat(dockerComposePath); err == nil {
+				siteName := strings.TrimPrefix(d.Name(), "wordpress-")
+				sites = append(sites, siteName)
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan for sites: %w", err)
+	}
+
+	return sites, nil
 }
 
 func (w *WPPDeployer) createFileFromTemplate(templateFile, outputPath string, data TemplateData) error {
@@ -358,6 +367,7 @@ Commands:
   install                           Set up %s workspace in ~/.%s
   deploy <sitename>                 Deploy a new WordPress site
   delete <sitename>                 Delete an existing WordPress site
+  list                              List all WordPress sites
   exec [-r] <sitename> <args...>    Run docker-compose command on specific site
   exec-all [-r] <args...>           Run docker-compose command on all sites
 
@@ -368,13 +378,14 @@ Examples:
   %s install
   %s deploy mysite
   %s delete mysite
+  %s list
   %s exec mysite up -d
   %s exec -r mysite down --volumes
   %s exec mysite ps
   %s exec-all -r restart
   %s exec-all ps
 
-`, appName, version, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName)
+`, appName, version, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName)
 }
 
 func main() {
@@ -474,6 +485,16 @@ func main() {
 		if err := deployer.ExecAll(args, reloadNginx); err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
+		}
+
+	case "list":
+		sites, err := deployer.List()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+		for _, sitename := range sites {
+			fmt.Println(sitename)
 		}
 
 	case "help", "-h", "--help":

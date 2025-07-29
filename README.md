@@ -72,6 +72,14 @@ wpp-deployer delete mysite
 
 Removes the site and all associated data after confirmation.
 
+### List Sites
+
+```bash
+wpp-deployer list
+```
+
+Lists all WordPress sites (both activated and deactivated).
+
 ### Manage Sites
 
 ```bash
