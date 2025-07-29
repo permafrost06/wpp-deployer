@@ -1,0 +1,77 @@
+#compdef wpp-deployer
+
+_wpp-deployer() {
+    local context state state_descr line
+    typeset -A opt_args
+
+    # Get list of sites
+    _get_sites() {
+        local sites
+        sites=(${(f)"$(wpp-deployer list 2>/dev/null)"})
+        _describe 'sites' sites
+    }
+
+    # Docker compose commands
+    local docker_compose_commands=(
+        'up:Create and start containers'
+        'down:Stop and remove containers'
+        'restart:Restart services'
+        'start:Start services'
+        'stop:Stop services'
+        'pause:Pause services'
+        'unpause:Unpause services'
+        'ps:List containers'
+        'logs:View output from containers'
+        'exec:Execute a command in a running container'
+        'run:Run a one-off command'
+        'build:Build or rebuild services'
+        'pull:Pull service images'
+        'push:Push service images'
+        'config:Validate and view compose file'
+    )
+
+    _arguments -C \
+        '1: :_wpp_deployer_commands' \
+        '*:: :->args'
+
+    case $state in
+        args)
+            case $words[1] in
+                deploy|delete)
+                    _arguments \
+                        '1: :_get_sites'
+                    ;;
+                exec)
+                    _arguments \
+                        '(-r --reload)'{-r,--reload}'[Reload nginx after command]' \
+                        '1: :_get_sites' \
+                        '*: :_describe "docker-compose commands" docker_compose_commands'
+                    ;;
+                exec-all)
+                    _arguments \
+                        '(-r --reload)'{-r,--reload}'[Reload nginx after command]' \
+                        '*: :_describe "docker-compose commands" docker_compose_commands'
+                    ;;
+                list|install|help|version)
+                    # These commands take no arguments
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+_wpp_deployer_commands() {
+    local commands=(
+        'install:Set up wpp-deployer workspace'
+        'deploy:Deploy a new WordPress site'
+        'delete:Delete an existing WordPress site'
+        'list:List all WordPress sites'
+        'exec:Run docker-compose command on specific site'
+        'exec-all:Run docker-compose command on all sites'
+        'help:Show help message'
+        'version:Show version information'
+    )
+    _describe 'commands' commands
+}
+
+_wpp-deployer "$@" 

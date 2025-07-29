@@ -21,8 +21,12 @@ A Go application for deploying and managing multiple WordPress sites with Docker
 ### Option 1: Using Make (Recommended)
 
 ```bash
-# Build and install the binary
-make install
+# Build and install everything (binary + shell completions)
+make install-all
+
+# Or install components separately:
+make install              # Install binary only
+make install-completions  # Install shell completions only
 
 # Set up the workspace
 wpp-deployer install
@@ -37,8 +41,45 @@ go build -o wpp-deployer main.go
 # Copy to system PATH
 sudo cp wpp-deployer /usr/local/bin/
 
+# Install shell completions (optional)
+chmod +x install-completions.sh
+./install-completions.sh
+
 # Set up the workspace
 wpp-deployer install
+```
+
+## Shell Completion
+
+The application includes shell completion scripts for bash and zsh that provide:
+
+- **Command completion**: Tab-complete `install`, `deploy`, `delete`, `list`, `exec`, `exec-all`
+- **Site name completion**: Automatically complete site names for `deploy`, `delete`, and `exec` commands
+- **Docker-compose command completion**: Complete common docker-compose commands like `up`, `down`, `ps`, `logs`
+- **Flag completion**: Complete the `-r` flag and common docker-compose flags
+
+### Completion Features
+
+```bash
+# Tab completion examples:
+wpp-deployer <TAB>                    # Shows: install deploy delete list exec exec-all help version
+wpp-deployer deploy <TAB>             # Shows: available site names
+wpp-deployer exec <TAB>               # Shows: -r and available site names  
+wpp-deployer exec mysite <TAB>        # Shows: up down restart ps logs etc.
+wpp-deployer exec-all <TAB>           # Shows: -r up down restart ps logs etc.
+```
+
+### Manual Completion Installation
+
+If you didn't use `make install-all`, you can install completions manually:
+
+```bash
+# Install completions
+./install-completions.sh
+
+# Or copy manually:
+# Bash: copy completions/wpp-deployer.bash to your bash-completion directory
+# Zsh: copy completions/_wpp-deployer to your zsh site-functions directory
 ```
 
 ## Usage
@@ -170,16 +211,26 @@ After modifying templates, new deployments will use the updated configurations. 
 make build
 ```
 
+### Installing/Uninstalling
+
+```bash
+# Complete installation
+make install-all
+
+# Individual components
+make install              # Binary only
+make install-completions  # Shell completions only
+
+# Uninstall
+make uninstall-all        # Remove everything
+make uninstall            # Remove binary only
+make uninstall-completions # Remove completions only
+```
+
 ### Cleaning
 
 ```bash
 make clean
-```
-
-### Uninstalling
-
-```bash
-make uninstall
 ```
 
 ## Migration from Bash Scripts

@@ -2,7 +2,7 @@ BINARY_NAME=wpp-deployer
 BUILD_DIR=build
 INSTALL_PATH=/usr/local/bin
 
-.PHONY: all build clean install uninstall test
+.PHONY: all build clean install install-completions uninstall uninstall-completions test
 
 all: build
 
@@ -16,10 +16,31 @@ install: build
 	sudo cp $(BUILD_DIR)/$(BINARY_NAME) $(INSTALL_PATH)/$(BINARY_NAME)
 	@echo "Installation completed. Run '$(BINARY_NAME) install' to set up the workspace."
 
+install-completions:
+	@echo "Installing shell completions..."
+	chmod +x install-completions.sh
+	./install-completions.sh
+
+install-all: install install-completions
+	@echo "Complete installation finished!"
+
 uninstall:
 	@echo "Removing $(BINARY_NAME) from $(INSTALL_PATH)..."
 	sudo rm -f $(INSTALL_PATH)/$(BINARY_NAME)
 	@echo "Uninstalled. Note: ~/.wpp-deployer directory was not removed."
+
+uninstall-completions:
+	@echo "Removing shell completions..."
+	@sudo rm -f /usr/local/share/bash-completion/completions/wpp-deployer 2>/dev/null || true
+	@sudo rm -f /usr/share/bash-completion/completions/wpp-deployer 2>/dev/null || true
+	@rm -f ~/.local/share/bash-completion/completions/wpp-deployer 2>/dev/null || true
+	@sudo rm -f /usr/local/share/zsh/site-functions/_wpp-deployer 2>/dev/null || true
+	@sudo rm -f /usr/share/zsh/site-functions/_wpp-deployer 2>/dev/null || true
+	@rm -f ~/.local/share/zsh/site-functions/_wpp-deployer 2>/dev/null || true
+	@echo "Shell completions removed."
+
+uninstall-all: uninstall uninstall-completions
+	@echo "Complete uninstallation finished!"
 
 clean:
 	@echo "Cleaning build artifacts..."
@@ -30,9 +51,13 @@ test:
 
 help:
 	@echo "Available targets:"
-	@echo "  build     - Build the binary"
-	@echo "  install   - Install the binary to $(INSTALL_PATH) (requires sudo)"
-	@echo "  uninstall - Remove the binary from $(INSTALL_PATH) (requires sudo)"
-	@echo "  clean     - Remove build artifacts"
-	@echo "  test      - Run tests"
-	@echo "  help      - Show this help message" 
+	@echo "  build              - Build the binary"
+	@echo "  install            - Install the binary to $(INSTALL_PATH) (requires sudo)"
+	@echo "  install-completions - Install shell completion scripts"
+	@echo "  install-all        - Install binary and completions"
+	@echo "  uninstall          - Remove the binary from $(INSTALL_PATH) (requires sudo)"
+	@echo "  uninstall-completions - Remove shell completion scripts"
+	@echo "  uninstall-all      - Remove binary and completions"
+	@echo "  clean              - Remove build artifacts"
+	@echo "  test               - Run tests"
+	@echo "  help               - Show this help message" 
