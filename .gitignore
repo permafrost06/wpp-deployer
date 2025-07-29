@@ -26,3 +26,5 @@ go.work
 wordpress-site1/wp-data
 nginx-config/*.conf
 wordpress-*/
+
+build/

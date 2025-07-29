@@ -13,4 +13,4 @@ services:
 
 networks:
   wpp-deployer-network:
-    external: true
+    external: true 

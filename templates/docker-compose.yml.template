@@ -1,0 +1,54 @@
+services:
+  wordpress-{{.Sitename}}:
+    image: wordpress:6.8.2-apache
+    container_name: wordpress-{{.Sitename}}-apache
+    depends_on:
+      - wordpress-{{.Sitename}}-db
+    environment:
+      WORDPRESS_DB_HOST: wordpress-{{.Sitename}}-db
+      WORDPRESS_DB_NAME: {{.Sitename}}
+      WORDPRESS_DB_USER: {{.Sitename}}
+      WORDPRESS_DB_PASSWORD: {{.Sitename}}pass
+    volumes:
+      - ./wp-data:/var/www/html
+    networks:
+      - wpp-deployer-network
+    restart: unless-stopped
+
+  wordpress-{{.Sitename}}-db:
+    image: mariadb
+    container_name: wordpress-{{.Sitename}}-db
+    environment:
+      MYSQL_DATABASE: {{.Sitename}}
+      MYSQL_USER: {{.Sitename}}
+      MYSQL_PASSWORD: {{.Sitename}}pass
+      MYSQL_ROOT_PASSWORD: rootpass
+    volumes:
+      - db-data:/var/lib/mysql
+    networks:
+      - wpp-deployer-network
+    restart: unless-stopped
+
+  wpcli:
+    image: wordpress:cli
+    container_name: wordpress-{{.Sitename}}-wpcli
+    depends_on:
+      - wordpress-{{.Sitename}}
+    volumes:
+      - ./wp-data:/var/www/html
+    networks:
+      - wpp-deployer-network
+    entrypoint: wp
+    environment:
+      WORDPRESS_DB_HOST: wordpress-{{.Sitename}}-db
+      WORDPRESS_DB_NAME: {{.Sitename}}
+      WORDPRESS_DB_USER: {{.Sitename}}
+      WORDPRESS_DB_PASSWORD: {{.Sitename}}pass
+    user: "33:33"
+
+volumes:
+  db-data:
+
+networks:
+  wpp-deployer-network:
+    external: true 
