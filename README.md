@@ -9,12 +9,15 @@ A Go application for deploying and managing multiple WordPress sites with Docker
 - Site management (start, stop, delete)
 - Embedded templates - no external dependencies
 - Clean workspace management in `~/.wpp-deployer`
+- **GitHub webhook server** for CI/CD integration
+- Shell completion for improved UX
 
 ## Requirements
 
 - Go 1.21 or later
 - Docker and Docker Compose
 - Linux/macOS (tested on Arch Linux)
+- systemd (for webhook service background operation)
 
 ## Installation
 
@@ -147,6 +150,82 @@ wpp-deployer exec-all -r down
 
 # Check status of all sites
 wpp-deployer exec-all ps
+```
+
+## GitHub Webhook Server
+
+The application includes a webhook server for GitHub integration that can listen for repository events like pull requests and pushes.
+
+### Start Webhook Server
+
+```bash
+# Start webhook server (foreground)
+wpp-deployer listen --port 3000 --secret your-webhook-secret
+
+# Or run as systemd service (background)
+sudo make install-service        # Install service
+sudo systemctl enable wpp-deployer-webhook  # Enable service
+sudo systemctl start wpp-deployer-webhook   # Start service
+sudo systemctl status wpp-deployer-webhook  # Check status
+sudo journalctl -u wpp-deployer-webhook -f  # View logs
+```
+
+### GitHub Configuration
+
+1. **Configure webhook in your GitHub repository:**
+   - Go to Settings → Webhooks → Add webhook
+   - Payload URL: `http://your-domain.com/webhook`
+   - Content type: `application/json`
+   - Secret: (same as `--secret` parameter)
+   - Events: Select "Pull requests" and "Pushes"
+
+2. **Nginx automatically proxies `/webhook` to the server** (port 3000 by default)
+
+### Webhook Events
+
+The server listens for and displays:
+- **Pull Requests**: Shows PR number, action, title, repository, and branches
+- **Push Events**: Shows repository, branch, and commit range
+- **Ping Events**: Confirms webhook configuration
+
+Example output:
+```
+[15:30:45] 🔀 PR #123 opened: Add new feature
+           Repository: username/my-repo
+           Branch: feature-branch → main
+           URL: https://github.com/username/my-repo/pull/123
+
+[15:31:20] 📤 Push to username/my-repo
+           Branch: main
+           Commits: abc12345...def67890
+```
+
+### Service Management
+
+```bash
+# Install everything (binary + completions + service)
+sudo make install-all
+
+# Individual service operations
+sudo make install-service       # Install service only
+
+# Then manage with systemctl:
+sudo systemctl enable wpp-deployer-webhook   # Enable auto-start
+sudo systemctl start wpp-deployer-webhook    # Start service
+sudo systemctl stop wpp-deployer-webhook     # Stop service
+sudo systemctl status wpp-deployer-webhook   # Check status
+sudo systemctl disable wpp-deployer-webhook  # Disable auto-start
+
+# View logs
+sudo journalctl -u wpp-deployer-webhook -f
+
+# Complete removal
+sudo make uninstall-all         # Remove binary and completions
+# Manually remove service if needed:
+sudo systemctl stop wpp-deployer-webhook
+sudo systemctl disable wpp-deployer-webhook
+sudo rm /etc/systemd/system/wpp-deployer-webhook.service
+sudo systemctl daemon-reload
 ```
 
 ### Other Commands

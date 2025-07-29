@@ -370,9 +370,12 @@ Commands:
   list                              List all WordPress sites
   exec [-r] <sitename> <args...>    Run docker-compose command on specific site
   exec-all [-r] <args...>           Run docker-compose command on all sites
+  listen [--port PORT] [--secret SECRET]  Start webhook server for GitHub events
 
 Options:
   -r                   Reload nginx after command execution
+  --port PORT          Webhook server port (default: 3000)
+  --secret SECRET      GitHub webhook secret for validation
 
 Examples:
   %s install
@@ -384,8 +387,9 @@ Examples:
   %s exec mysite ps
   %s exec-all -r restart
   %s exec-all ps
+  %s listen --port 3000 --secret mysecret
 
-`, appName, version, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName)
+`, appName, version, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName)
 }
 
 func main() {
@@ -483,6 +487,30 @@ func main() {
 		}
 
 		if err := deployer.ExecAll(args, reloadNginx); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+
+	case "listen":
+		port := "3000"
+		secret := ""
+
+		// Parse arguments for port and secret
+		args := os.Args[2:]
+		for i, arg := range args {
+			switch arg {
+			case "--port", "-p":
+				if i+1 < len(args) {
+					port = args[i+1]
+				}
+			case "--secret", "-s":
+				if i+1 < len(args) {
+					secret = args[i+1]
+				}
+			}
+		}
+
+		if err := deployer.Listen(port, secret); err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
