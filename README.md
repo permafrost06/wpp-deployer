@@ -76,19 +76,28 @@ Removes the site and all associated data after confirmation.
 
 ```bash
 # Start a specific site
-wpp-deployer up mysite
+wpp-deployer exec mysite up -d
 
 # Stop a specific site
-wpp-deployer down mysite
+wpp-deployer exec mysite down
 
 # Stop a site and remove volumes
-wpp-deployer down -v mysite
+wpp-deployer exec mysite down --volumes
+
+# Restart a site and reload nginx
+wpp-deployer exec -r mysite restart
+
+# Check status of a specific site
+wpp-deployer exec mysite ps
 
 # Start all sites
-wpp-deployer up
+wpp-deployer exec-all up -d
 
-# Stop all sites
-wpp-deployer down
+# Stop all sites and reload nginx
+wpp-deployer exec-all -r down
+
+# Check status of all sites
+wpp-deployer exec-all ps
 ```
 
 ### Other Commands
@@ -170,9 +179,9 @@ make uninstall
 This Go application replaces the original bash scripts:
 - `deploy-site.sh` → `wpp-deployer deploy`
 - `delete-site.sh` → `wpp-deployer delete`
-- `site-control.sh` → `wpp-deployer up/down`
+- `site-control.sh` → `wpp-deployer exec/exec-all`
 
-All functionality is preserved with improved error handling and cross-platform compatibility.
+The new `exec` and `exec-all` commands provide more flexibility than the original up/down functionality, allowing any docker-compose command to be run on sites. All functionality is preserved with improved error handling and cross-platform compatibility.
 
 ## License
 

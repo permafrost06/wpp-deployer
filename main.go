@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"flag"
 	"fmt"
 	"io/fs"
 	"os"
@@ -233,41 +232,34 @@ func (w *WPPDeployer) Delete(sitename string) error {
 	return nil
 }
 
-func (w *WPPDeployer) Control(command string, sitename string, includeVolumes bool) error {
-	if command != "up" && command != "down" {
-		return fmt.Errorf("invalid command: %s (use 'up' or 'down')", command)
+func (w *WPPDeployer) Exec(sitename string, args []string, reloadNginx bool) error {
+	targetDir := filepath.Join(w.workDir, fmt.Sprintf("wordpress-%s", sitename))
+	dockerComposePath := filepath.Join(targetDir, "docker-compose.yml")
+
+	if _, err := os.Stat(targetDir); os.IsNotExist(err) {
+		return fmt.Errorf("site directory 'wordpress-%s' not found", sitename)
 	}
 
-	nginxChanged := false
-
-	if sitename != "" {
-		if err := w.controlSite(command, sitename, includeVolumes, &nginxChanged); err != nil {
-			return err
-		}
-	} else {
-		fmt.Println("[*] No sitename specified, scanning all sites...")
-
-		err := filepath.WalkDir(w.workDir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-
-			if d.IsDir() && strings.HasPrefix(d.Name(), "wordpress-") {
-				dockerComposePath := filepath.Join(path, "docker-compose.yml")
-				if _, err := os.Stat(dockerComposePath); err == nil {
-					siteName := strings.TrimPrefix(d.Name(), "wordpress-")
-					return w.controlSite(command, siteName, includeVolumes, &nginxChanged)
-				}
-			}
-			return nil
-		})
-
-		if err != nil {
-			return err
-		}
+	if _, err := os.Stat(dockerComposePath); os.IsNotExist(err) {
+		return fmt.Errorf("docker-compose.yml not found for site '%s'", sitename)
 	}
 
-	if nginxChanged {
+	fmt.Printf("[•] Running docker compose command on wordpress-%s...\n", sitename)
+
+	cmdArgs := []string{"compose", "-f", dockerComposePath}
+	cmdArgs = append(cmdArgs, args...)
+
+	cmd := exec.Command("docker", cmdArgs...)
+	cmd.Dir = targetDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("docker compose command failed for site %s: %w", sitename, err)
+	}
+
+	if reloadNginx {
+		fmt.Println("[↻] Reloading nginx...")
 		if err := w.reloadNginx(); err != nil {
 			return fmt.Errorf("failed to reload nginx: %w", err)
 		}
@@ -276,54 +268,45 @@ func (w *WPPDeployer) Control(command string, sitename string, includeVolumes bo
 	return nil
 }
 
-func (w *WPPDeployer) controlSite(command, sitename string, includeVolumes bool, nginxChanged *bool) error {
-	targetDir := filepath.Join(w.workDir, fmt.Sprintf("wordpress-%s", sitename))
-	dockerComposePath := filepath.Join(targetDir, "docker-compose.yml")
-	nginxConfig := filepath.Join(w.workDir, "nginx-config", fmt.Sprintf("%s.conf", sitename))
-	nginxDisabled := nginxConfig + ".disabled"
+func (w *WPPDeployer) ExecAll(args []string, reloadNginx bool) error {
+	var sites []string
 
-	if _, err := os.Stat(targetDir); os.IsNotExist(err) {
-		fmt.Printf("[!] Site directory 'wordpress-%s' not found\n", sitename)
+	err := filepath.WalkDir(w.workDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if d.IsDir() && strings.HasPrefix(d.Name(), "wordpress-") {
+			dockerComposePath := filepath.Join(path, "docker-compose.yml")
+			if _, err := os.Stat(dockerComposePath); err == nil {
+				siteName := strings.TrimPrefix(d.Name(), "wordpress-")
+				sites = append(sites, siteName)
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to scan for sites: %w", err)
+	}
+
+	if len(sites) == 0 {
+		fmt.Println("[!] No sites found")
 		return nil
 	}
 
-	switch command {
-	case "up":
-		fmt.Printf("[↑] Bringing up wordpress-%s...\n", sitename)
-		cmd := exec.Command("docker", "compose", "-f", dockerComposePath, "up", "-d")
-		cmd.Dir = targetDir
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to bring up site %s: %w", sitename, err)
+	fmt.Printf("[*] Running docker compose command on %d sites...\n", len(sites))
+
+	for _, sitename := range sites {
+		if err := w.Exec(sitename, args, false); err != nil {
+			fmt.Printf("[!] Error with site %s: %v\n", sitename, err)
 		}
+	}
 
-		if _, err := os.Stat(nginxDisabled); err == nil {
-			if err := os.Rename(nginxDisabled, nginxConfig); err != nil {
-				return fmt.Errorf("failed to enable nginx config: %w", err)
-			}
-			fmt.Printf("[+] Enabled nginx config for '%s'\n", sitename)
-			*nginxChanged = true
-		}
-
-	case "down":
-		fmt.Printf("[↓] Bringing down wordpress-%s...\n", sitename)
-
-		args := []string{"compose", "-f", dockerComposePath, "down"}
-		if includeVolumes {
-			args = append(args, "-v")
-		}
-
-		cmd := exec.Command("docker", args...)
-		cmd.Dir = targetDir
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to bring down site %s: %w", sitename, err)
-		}
-
-		if _, err := os.Stat(nginxConfig); err == nil {
-			if err := os.Rename(nginxConfig, nginxDisabled); err != nil {
-				return fmt.Errorf("failed to disable nginx config: %w", err)
-			}
-			fmt.Printf("[−] Disabled nginx config for '%s'\n", sitename)
-			*nginxChanged = true
+	if reloadNginx {
+		fmt.Println("[↻] Reloading nginx...")
+		if err := w.reloadNginx(); err != nil {
+			return fmt.Errorf("failed to reload nginx: %w", err)
 		}
 	}
 
@@ -372,25 +355,26 @@ Usage:
   %s <command> [options] [arguments]
 
 Commands:
-  install               Set up %s workspace in ~/.%s
-  deploy <sitename>     Deploy a new WordPress site
-  delete <sitename>     Delete an existing WordPress site
-  up [sitename]         Start site(s) - all sites if no sitename provided
-  down [options] [sitename]  Stop site(s) - all sites if no sitename provided
+  install                           Set up %s workspace in ~/.%s
+  deploy <sitename>                 Deploy a new WordPress site
+  delete <sitename>                 Delete an existing WordPress site
+  exec [-r] <sitename> <args...>    Run docker-compose command on specific site
+  exec-all [-r] <args...>           Run docker-compose command on all sites
 
-Options for 'down':
-  -v, --volumes        Remove volumes and disable nginx config
+Options:
+  -r                   Reload nginx after command execution
 
 Examples:
   %s install
   %s deploy mysite
   %s delete mysite
-  %s up mysite
-  %s down -v mysite
-  %s up
-  %s down
+  %s exec mysite up -d
+  %s exec -r mysite down --volumes
+  %s exec mysite ps
+  %s exec-all -r restart
+  %s exec-all ps
 
-`, appName, version, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName)
+`, appName, version, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName)
 }
 
 func main() {
@@ -449,32 +433,45 @@ func main() {
 			os.Exit(1)
 		}
 
-	case "up":
-		sitename := ""
-		if len(os.Args) >= 3 {
-			sitename = os.Args[2]
+	case "exec":
+		args := os.Args[2:]
+		reloadNginx := false
+
+		if len(args) > 0 && args[0] == "-r" {
+			reloadNginx = true
+			args = args[1:]
 		}
-		if err := deployer.Control("up", sitename, false); err != nil {
+
+		if len(args) < 2 {
+			fmt.Println("Error: exec requires sitename and docker-compose arguments")
+			fmt.Println("Usage: wpp-deployer exec [-r] <sitename> <docker-compose-args...>")
+			os.Exit(1)
+		}
+
+		sitename := args[0]
+		composeArgs := args[1:]
+
+		if err := deployer.Exec(sitename, composeArgs, reloadNginx); err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
 
-	case "down":
-		downFlags := flag.NewFlagSet("down", flag.ExitOnError)
-		volumes := downFlags.Bool("v", false, "Remove volumes and disable nginx config")
-		volumesLong := downFlags.Bool("volumes", false, "Remove volumes and disable nginx config")
-
+	case "exec-all":
 		args := os.Args[2:]
-		downFlags.Parse(args)
+		reloadNginx := false
 
-		includeVolumes := *volumes || *volumesLong
-
-		sitename := ""
-		if len(downFlags.Args()) > 0 {
-			sitename = downFlags.Args()[0]
+		if len(args) > 0 && args[0] == "-r" {
+			reloadNginx = true
+			args = args[1:]
 		}
 
-		if err := deployer.Control("down", sitename, includeVolumes); err != nil {
+		if len(args) < 1 {
+			fmt.Println("Error: exec-all requires docker-compose arguments")
+			fmt.Println("Usage: wpp-deployer exec-all [-r] <docker-compose-args...>")
+			os.Exit(1)
+		}
+
+		if err := deployer.ExecAll(args, reloadNginx); err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
