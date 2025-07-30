@@ -19,6 +19,11 @@ A Go application for deploying and managing multiple WordPress sites with Docker
 - Linux/macOS (tested on Arch Linux)
 - systemd (for webhook service background operation)
 
+**For automated deployments via webhooks:**
+- `git` - Repository cloning and updates
+- `bash` - Build command execution
+- WordPress sites with WP-CLI (included in Docker setup)
+
 ## Installation
 
 ### Option 1: Using Make (Recommended)
@@ -168,6 +173,35 @@ Configured repositories (2):
 
 > **Note**: Repository configurations are prepared for future webhook-triggered automated deployments. When a push or pull request event is received for a configured repository, the system will be able to automatically run the build command and deploy the resulting zip file.
 
+### Prerequisites for Automated Deployment
+
+The webhook server requires the following tools to be installed:
+- `git` - For cloning and updating repositories
+- `bash` - For executing build commands
+- WordPress sites must have WP-CLI available (included in the Docker setup)
+
+### File Structure for Automated Deployments
+
+When webhooks trigger automated deployments, the following structure is created in `~/.wpp-deployer/`:
+
+```
+~/.wpp-deployer/
+├── repos/                      # Cloned repositories for builds
+│   └── username/
+│       └── repo-name/          # Repository contents
+├── wordpress-username-repo-name-branch/  # Generated WordPress sites
+│   ├── docker-compose.yml
+│   └── wp-data/
+│       └── wp-content/
+│           └── plugins/        # Installed plugins appear here
+└── repos.json                 # Repository configurations
+```
+
+Example site URLs generated:
+- `frost-tableberg-main.nshlog.com` (from push to main branch)
+- `frost-tableberg-feature-branch.nshlog.com` (from PR with feature-branch)
+- `myuser-frontend-dev.nshlog.com` (from push to dev branch)
+
 ### Manage Sites
 
 ```bash
@@ -232,16 +266,47 @@ The server listens for and displays:
 - **Push Events**: Shows repository, branch, and commit range
 - **Ping Events**: Confirms webhook configuration
 
+**Automatic Deployment**: When push or PR events are received for repositories configured with `add-repo`, the system automatically:
+
+1. **Matches Repository**: Checks if the webhook repository matches a configured repo
+2. **Creates Site**: Generates site name as `username-repo-name-branch.nshlog.com`
+3. **Clones Repository**: Downloads/updates code to `~/.wpp-deployer/repos/username/repo-name`
+4. **Runs Build**: Executes the configured build command
+5. **Deploys WordPress**: Creates/updates WordPress site
+6. **Installs Plugin**: Uses WP-CLI to install and activate the built plugin zip file
+
+> **Note**: Repositories not configured with `add-repo` will only display webhook events in the console without triggering deployments.
+
 Example output:
 ```
-[15:30:45] 🔀 PR #123 opened: Add new feature
-           Repository: username/my-repo
-           Branch: feature-branch → main
-           URL: https://github.com/username/my-repo/pull/123
+[15:30:45] 📤 Push to frost/tableberg
+         Branch: main
+         Commits: abc12345...def67890
+         [+] Repository configured for deployment
+         [+] Build: pnpm i && pnpm run export
+         [+] Zip: packages/tableberg/tableberg.zip
+         [+] Creating site: frost-tableberg-main.nshlog.com
+         [+] Updating repository...
+         [+] Cloning repository...
+         [+] Setting up WordPress site...
+         [+] Creating new WordPress site: frost-tableberg-main
+         [+] Running build command: pnpm i && pnpm run export
+         [+] Installing WordPress plugin...
+         [+] Installing plugin: packages/tableberg/tableberg.zip
+         [+] Plugin installed and activated successfully!
+         [✔] Deployment completed successfully!
 
-[15:31:20] 📤 Push to username/my-repo
-           Branch: main
-           Commits: abc12345...def67890
+[15:31:20] 🔀 PR #123 opened: Add new feature
+         Repository: frost/tableberg
+         Branch: feature-branch → main
+         URL: https://github.com/frost/tableberg/pull/123
+         [+] Repository configured for deployment
+         [+] Build: pnpm i && pnpm run export
+         [+] Zip: packages/tableberg/tableberg.zip
+         [+] Creating site: frost-tableberg-feature-branch.nshlog.com
+         [+] Installing WordPress plugin...
+         [+] Plugin installed and activated successfully!
+         [✔] Deployment completed successfully!
 ```
 
 ### Service Management
@@ -321,50 +386,4 @@ Templates are stored in `~/.wpp-deployer/templates/` and can be modified after i
 - `docker-compose.yml.template` - WordPress site container configuration
 - `nginx-config.conf.template` - Nginx reverse proxy configuration per site
 - `nginx-docker-compose.yml.template` - Main Nginx container configuration
-- `wpp-deployer.conf.template` - Main domain Nginx configuration
-- `index.html.template` - Default index page
-
-After modifying templates, new deployments will use the updated configurations. Existing sites won't be affected unless redeployed.
-
-## Development
-
-### Building
-
-```bash
-make build
-```
-
-### Installing/Uninstalling
-
-```bash
-# Complete installation
-make install-all
-
-# Individual components
-make install              # Binary only
-make install-completions  # Shell completions only
-
-# Uninstall
-make uninstall-all        # Remove everything
-make uninstall            # Remove binary only
-make uninstall-completions # Remove completions only
-```
-
-### Cleaning
-
-```bash
-make clean
-```
-
-## Migration from Bash Scripts
-
-This Go application replaces the original bash scripts:
-- `deploy-site.sh` → `wpp-deployer deploy`
-- `delete-site.sh` → `wpp-deployer delete`
-- `site-control.sh` → `wpp-deployer exec/exec-all`
-
-The new `exec` and `exec-all` commands provide more flexibility than the original up/down functionality, allowing any docker-compose command to be run on sites. All functionality is preserved with improved error handling and cross-platform compatibility.
-
-## License
-
-MIT License 
+- `
