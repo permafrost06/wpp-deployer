@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -17,6 +18,7 @@ const (
 	version = "1.0.0"
 )
 
+// Template file names
 const (
 	dockerComposeTemplateFile = "docker-compose.yml.template"
 	nginxConfigTemplateFile   = "nginx-config.conf.template"
@@ -27,6 +29,12 @@ const (
 
 type TemplateData struct {
 	Sitename string
+}
+
+type RepoConfig struct {
+	Repo         string `json:"repo"`
+	BuildCommand string `json:"build_command"`
+	ZipLocation  string `json:"zip_location"`
 }
 
 type WPPDeployer struct {
@@ -50,6 +58,112 @@ func (w *WPPDeployer) loadTemplate(templateFile string) (string, error) {
 		return "", fmt.Errorf("failed to read template %s: %w", templateFile, err)
 	}
 	return string(content), nil
+}
+
+func (w *WPPDeployer) getRepoConfigPath() string {
+	return filepath.Join(w.workDir, "repos.json")
+}
+
+func (w *WPPDeployer) loadRepoConfigs() (map[string]RepoConfig, error) {
+	configPath := w.getRepoConfigPath()
+	configs := make(map[string]RepoConfig)
+
+	// If file doesn't exist, return empty map
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return configs, nil
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read repo configs: %w", err)
+	}
+
+	if err := json.Unmarshal(data, &configs); err != nil {
+		return nil, fmt.Errorf("failed to parse repo configs: %w", err)
+	}
+
+	return configs, nil
+}
+
+func (w *WPPDeployer) saveRepoConfigs(configs map[string]RepoConfig) error {
+	configPath := w.getRepoConfigPath()
+
+	data, err := json.MarshalIndent(configs, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal repo configs: %w", err)
+	}
+
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write repo configs: %w", err)
+	}
+
+	return nil
+}
+
+func (w *WPPDeployer) AddRepo(repo, buildCommand, zipLocation string) error {
+	if repo == "" {
+		return fmt.Errorf("repository name is required")
+	}
+	if buildCommand == "" {
+		return fmt.Errorf("build command is required")
+	}
+	if zipLocation == "" {
+		return fmt.Errorf("zip location is required")
+	}
+
+	// Validate repo format (should be username/repo-name)
+	if !strings.Contains(repo, "/") {
+		return fmt.Errorf("repository should be in format 'username/repo-name'")
+	}
+
+	configs, err := w.loadRepoConfigs()
+	if err != nil {
+		return err
+	}
+
+	// Check if repo already exists
+	if _, exists := configs[repo]; exists {
+		return fmt.Errorf("repository '%s' already exists", repo)
+	}
+
+	configs[repo] = RepoConfig{
+		Repo:         repo,
+		BuildCommand: buildCommand,
+		ZipLocation:  zipLocation,
+	}
+
+	if err := w.saveRepoConfigs(configs); err != nil {
+		return err
+	}
+
+	fmt.Printf("[✔] Repository configuration added:\n")
+	fmt.Printf("    Repository: %s\n", repo)
+	fmt.Printf("    Build Command: %s\n", buildCommand)
+	fmt.Printf("    Zip Location: %s\n", zipLocation)
+
+	return nil
+}
+
+func (w *WPPDeployer) ListRepos() error {
+	configs, err := w.loadRepoConfigs()
+	if err != nil {
+		return err
+	}
+
+	if len(configs) == 0 {
+		fmt.Println("No repositories configured.")
+		return nil
+	}
+
+	fmt.Printf("Configured repositories (%d):\n\n", len(configs))
+	for repo, config := range configs {
+		fmt.Printf("  %s\n", repo)
+		fmt.Printf("    Build: %s\n", config.BuildCommand)
+		fmt.Printf("    Zip:   %s\n", config.ZipLocation)
+		fmt.Println()
+	}
+
+	return nil
 }
 
 func (w *WPPDeployer) Install() error {
@@ -371,6 +485,8 @@ Commands:
   exec [-r] <sitename> <args...>    Run docker-compose command on specific site
   exec-all [-r] <args...>           Run docker-compose command on all sites
   listen [--port PORT] [--secret SECRET]  Start webhook server for GitHub events
+  add-repo <username/repo> <build-command> <zip-location>  Add a new repository for deployment
+  list-repos                          List all configured repositories
 
 Options:
   -r                   Reload nginx after command execution
@@ -388,8 +504,10 @@ Examples:
   %s exec-all -r restart
   %s exec-all ps
   %s listen --port 3000 --secret mysecret
+  %s add-repo myuser/myapp 'pnpm i && pnpm run export' packages/app/dist.zip
+  %s list-repos
 
-`, appName, version, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName)
+`, appName, version, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName)
 }
 
 func main() {
@@ -515,6 +633,23 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "add-repo":
+		if len(os.Args) < 5 {
+			fmt.Println("Error: add-repo requires repository, build command, and zip location")
+			fmt.Println("Usage: wpp-deployer add-repo <username/repo> <build-command> <zip-location>")
+			fmt.Println("Example: wpp-deployer add-repo myuser/myapp 'pnpm i && pnpm run export' packages/app/dist.zip")
+			os.Exit(1)
+		}
+
+		repo := os.Args[2]
+		buildCommand := os.Args[3]
+		zipLocation := os.Args[4]
+
+		if err := deployer.AddRepo(repo, buildCommand, zipLocation); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+
 	case "list":
 		sites, err := deployer.List()
 		if err != nil {
@@ -523,6 +658,12 @@ func main() {
 		}
 		for _, sitename := range sites {
 			fmt.Println(sitename)
+		}
+
+	case "list-repos":
+		if err := deployer.ListRepos(); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
 		}
 
 	case "help", "-h", "--help":

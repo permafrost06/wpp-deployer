@@ -124,6 +124,50 @@ wpp-deployer list
 
 Lists all WordPress sites (both activated and deactivated).
 
+## Repository Configuration
+
+The application can store build configurations for repositories to enable automated deployments via webhooks.
+
+### Add Repository Configuration
+
+```bash
+# Add a new repository configuration
+wpp-deployer add-repo username/repo-name "build-command" "zip-location"
+
+# Examples:
+wpp-deployer add-repo myuser/frontend "pnpm i && pnpm run build" "dist/app.zip"
+wpp-deployer add-repo frost/tableberg "pnpm i && pnpm run export" "packages/tableberg/tableberg.zip"
+wpp-deployer add-repo company/api "npm ci && npm run compile" "build/api.zip"
+```
+
+### List Repository Configurations
+
+```bash
+wpp-deployer list-repos
+```
+
+Example output:
+```
+Configured repositories (2):
+
+  frost/tableberg
+    Build: pnpm i && pnpm run export
+    Zip:   packages/tableberg/tableberg.zip
+
+  myuser/frontend
+    Build: pnpm i && pnpm run build
+    Zip:   dist/app.zip
+```
+
+### Repository Configuration Storage
+
+- Configurations are stored in `~/.wpp-deployer/repos.json`
+- Repository format must be `username/repo-name`
+- Build commands can include multiple steps with `&&`
+- Zip location should be relative to the repository root
+
+> **Note**: Repository configurations are prepared for future webhook-triggered automated deployments. When a push or pull request event is received for a configured repository, the system will be able to automatically run the build command and deploy the resulting zip file.
+
 ### Manage Sites
 
 ```bash

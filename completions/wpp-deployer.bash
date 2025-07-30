@@ -5,7 +5,7 @@ _wpp_deployer_completions() {
     _init_completion || return
 
     # Main commands
-    local commands="install deploy delete list exec exec-all help version"
+    local commands="install deploy delete list exec exec-all listen add-repo list-repos help version"
     
     # Docker compose subcommands
     local docker_compose_commands="up down restart start stop pause unpause ps logs exec run build pull push config"
@@ -39,6 +39,18 @@ _wpp_deployer_completions() {
                         # Complete with docker-compose commands
                         COMPREPLY=($(compgen -W "$docker_compose_commands" -- "$cur"))
                     fi
+                    ;;
+                listen)
+                    if [[ $cur == "--port" || $cur == "-p" || $cur == "--secret" || $cur == "-s" ]]; then
+                        COMPREPLY=($(compgen -W "--port -p --secret -s" -- "$cur"))
+                    fi
+                    ;;
+                add-repo)
+                    # First argument should be repository name (username/repo format)
+                    COMPREPLY=()
+                    ;;
+                list-repos|list|install|help|version)
+                    # These commands take no arguments
                     ;;
                 *)
                     ;;
