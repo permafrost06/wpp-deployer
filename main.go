@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+	"time"
 )
 
 const (
@@ -294,6 +295,11 @@ func (w *WPPDeployer) Deploy(sitename string) error {
 		return fmt.Errorf("failed to reload nginx: %w", err)
 	}
 
+	fmt.Println("[+] Installing WordPress...")
+	if err := w.installWordPress(sitename, targetDir); err != nil {
+		return fmt.Errorf("failed to install WordPress: %w", err)
+	}
+
 	fmt.Printf("[✔] Site '%s' deployed successfully!\n", domain)
 	return nil
 }
@@ -476,6 +482,64 @@ func (w *WPPDeployer) reloadNginx() error {
 
 	cmd = exec.Command("docker", "exec", "wpp-deployer-nginx", "nginx", "-s", "reload")
 	return cmd.Run()
+}
+
+func (w *WPPDeployer) installWordPress(sitename, targetDir string) error {
+	dockerComposePath := filepath.Join(targetDir, "docker-compose.yml")
+	wordpressService := fmt.Sprintf("wordpress-%s", sitename)
+
+	// Wait for WordPress container to be ready
+	fmt.Println("[•] Waiting for WordPress container to be ready...")
+	for i := 0; i < 60; i++ { // Wait up to 60 seconds
+		// Check if WordPress service is running
+		cmd := exec.Command("docker", "compose", "-f", dockerComposePath, "ps", "--services", "--filter", "status=running")
+		cmd.Dir = targetDir
+		output, err := cmd.Output()
+		if err == nil && strings.Contains(string(output), wordpressService) {
+			// Also check if MySQL is ready by testing WP-CLI connection
+			cmd = exec.Command("docker", "compose", "-f", dockerComposePath, "run", "--rm", "wpcli", "--allow-root", "db", "check")
+			cmd.Dir = targetDir
+			if err := cmd.Run(); err == nil {
+				break // Both WordPress and database are ready
+			}
+		}
+
+		if i == 59 {
+			return fmt.Errorf("WordPress container did not become ready within 60 seconds")
+		}
+
+		fmt.Printf(".")
+		time.Sleep(1 * time.Second)
+	}
+	fmt.Println()
+
+	// Check if WordPress is already installed
+	fmt.Println("[•] Checking if WordPress is already installed...")
+	cmd := exec.Command("docker", "compose", "-f", dockerComposePath, "run", "--rm", "wpcli", "--allow-root", "core", "is-installed")
+	cmd.Dir = targetDir
+	if err := cmd.Run(); err == nil {
+		fmt.Println("[!] WordPress is already installed, skipping installation")
+		return nil
+	}
+
+	// Install WordPress using the dedicated wpcli service
+	fmt.Println("[•] Installing WordPress core...")
+	url := fmt.Sprintf("http://%s.nshlog.com", sitename)
+	cmd = exec.Command("docker", "compose", "-f", dockerComposePath, "run", "--rm", "wpcli",
+		"--allow-root", "core", "install",
+		fmt.Sprintf("--url=%s", url),
+		fmt.Sprintf("--title=%s", sitename),
+		"--admin_user=outmatch-underdog",
+		"--admin_password=7E3cdGT0EyucyA",
+		"--admin_email=admin@nshlog.com")
+	cmd.Dir = targetDir
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to run WordPress installation: %w", err)
+	}
+
+	fmt.Println("[✔] WordPress installed successfully")
+	return nil
 }
 
 func printUsage() {
