@@ -339,7 +339,14 @@ func (w *WPPDeployer) Delete(sitename string) error {
 
 	fmt.Println("[−] Deleting site directory...")
 	if err := os.RemoveAll(targetDir); err != nil {
-		return fmt.Errorf("failed to delete site directory: %w", err)
+		fmt.Println("[!] Normal deletion failed (likely due to Docker container file ownership)")
+		fmt.Println("[+] Attempting deletion with elevated privileges...")
+
+		cmd := exec.Command("sudo", "rm", "-rf", targetDir)
+		if sudoErr := cmd.Run(); sudoErr != nil {
+			return fmt.Errorf("failed to delete site directory with sudo: %w (original error: %v)", sudoErr, err)
+		}
+		fmt.Println("[✔] Directory deleted with elevated privileges")
 	}
 
 	fmt.Printf("[✔] Site '%s' deleted successfully.\n", sitename)
