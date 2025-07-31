@@ -25,11 +25,36 @@ const (
 	nginxConfigTemplateFile   = "nginx-config.conf.template"
 	nginxDockerComposeFile    = "nginx-docker-compose.yml.template"
 	mainNginxConfigFile       = "wpp-deployer.conf.template"
+	nginxMainConfigFile       = "nginx.conf.template"
 	indexHTMLFile             = "index.html.template"
 )
 
 type TemplateData struct {
 	Sitename string
+}
+
+// generateShortName creates a shortened version of the sitename for service names
+// Takes the first 10 characters and removes any non-alphanumeric characters except hyphens
+func generateShortName(sitename string) string {
+	// For webhook deployments, extract repo name from username-repo-branch format
+	parts := strings.Split(sitename, "-")
+	var repoName string
+	if len(parts) >= 3 {
+		// Skip username (first part) and take repo name parts
+		repoName = strings.Join(parts[1:len(parts)-1], "-")
+	} else {
+		repoName = sitename
+	}
+
+	// Take first 10 characters
+	if len(repoName) > 10 {
+		repoName = repoName[:10]
+	}
+
+	// Clean up any trailing hyphens
+	repoName = strings.TrimRight(repoName, "-")
+
+	return repoName
 }
 
 type RepoConfig struct {
@@ -187,6 +212,7 @@ func (w *WPPDeployer) Install() error {
 		"nginx-config.conf.template":        nginxConfigTemplateFile,
 		"nginx-docker-compose.yml.template": nginxDockerComposeFile,
 		"wpp-deployer.conf.template":        mainNginxConfigFile,
+		"nginx.conf.template":               nginxMainConfigFile,
 		"index.html.template":               indexHTMLFile,
 	}
 
@@ -219,10 +245,16 @@ func (w *WPPDeployer) Install() error {
 		return fmt.Errorf("failed to load main nginx config template: %w", err)
 	}
 
+	nginxMainConfigContent, err := w.loadTemplate(nginxMainConfigFile)
+	if err != nil {
+		return fmt.Errorf("failed to load nginx main config template: %w", err)
+	}
+
 	files := map[string]string{
 		"nginx-docker-compose.yml":       nginxDockerComposeContent,
 		"html/index.html":                indexHTMLContent,
 		"nginx-config/wpp-deployer.conf": mainNginxConfigContent,
+		"nginx.conf":                     nginxMainConfigContent,
 	}
 
 	for filePath, content := range files {
@@ -272,7 +304,9 @@ func (w *WPPDeployer) Deploy(sitename string) error {
 
 	fmt.Println("[+] Generating configuration files...")
 
-	tmplData := TemplateData{Sitename: sitename}
+	tmplData := TemplateData{
+		Sitename: sitename,
+	}
 
 	dockerComposePath := filepath.Join(targetDir, "docker-compose.yml")
 	if err := w.createFileFromTemplate(dockerComposeTemplateFile, dockerComposePath, tmplData); err != nil {
@@ -290,14 +324,14 @@ func (w *WPPDeployer) Deploy(sitename string) error {
 		return fmt.Errorf("failed to start containers: %w", err)
 	}
 
-	fmt.Println("[+] Reloading nginx...")
-	if err := w.reloadNginx(); err != nil {
-		return fmt.Errorf("failed to reload nginx: %w", err)
-	}
-
 	fmt.Println("[+] Installing WordPress...")
 	if err := w.installWordPress(sitename, targetDir); err != nil {
 		return fmt.Errorf("failed to install WordPress: %w", err)
+	}
+
+	fmt.Println("[+] Reloading nginx...")
+	if err := w.reloadNginx(); err != nil {
+		return fmt.Errorf("failed to reload nginx: %w", err)
 	}
 
 	fmt.Printf("[✔] Site '%s' deployed successfully!\n", domain)
@@ -474,33 +508,47 @@ func (w *WPPDeployer) createFileFromTemplate(templateFile, outputPath string, da
 }
 
 func (w *WPPDeployer) reloadNginx() error {
-	cmd := exec.Command("docker", "exec", "wpp-deployer-nginx", "nginx", "-t")
-	if err := cmd.Run(); err != nil {
-		fmt.Println("[!] Skipped nginx reload: config test failed")
-		return nil
+	// Try config test with retries to allow upstream containers to be ready
+	for i := 0; i < 5; i++ {
+		cmd := exec.Command("docker", "exec", "wpp-deployer-nginx", "nginx", "-t")
+		if err := cmd.Run(); err == nil {
+			// Config test passed, reload nginx
+			cmd = exec.Command("docker", "exec", "wpp-deployer-nginx", "nginx", "-s", "reload")
+			return cmd.Run()
+		}
+
+		if i < 4 { // Don't sleep on the last attempt
+			fmt.Printf("[•] Nginx config test failed, retrying in 2 seconds... (%d/5)\n", i+1)
+			time.Sleep(2 * time.Second)
+		}
 	}
 
-	cmd = exec.Command("docker", "exec", "wpp-deployer-nginx", "nginx", "-s", "reload")
-	return cmd.Run()
+	fmt.Println("[!] Skipped nginx reload: config test failed after 5 attempts")
+	return nil
 }
 
 func (w *WPPDeployer) installWordPress(sitename, targetDir string) error {
 	dockerComposePath := filepath.Join(targetDir, "docker-compose.yml")
 	wordpressService := fmt.Sprintf("wordpress-%s", sitename)
+	dbService := fmt.Sprintf("wordpress-%s-db", sitename)
 
 	// Wait for WordPress container to be ready
 	fmt.Println("[•] Waiting for WordPress container to be ready...")
 	for i := 0; i < 60; i++ { // Wait up to 60 seconds
-		// Check if WordPress service is running
+		// Check if both WordPress and DB services are running
 		cmd := exec.Command("docker", "compose", "-f", dockerComposePath, "ps", "--services", "--filter", "status=running")
 		cmd.Dir = targetDir
 		output, err := cmd.Output()
-		if err == nil && strings.Contains(string(output), wordpressService) {
-			// Also check if MySQL is ready by testing WP-CLI connection
-			cmd = exec.Command("docker", "compose", "-f", dockerComposePath, "run", "--rm", "wpcli", "--allow-root", "db", "check")
-			cmd.Dir = targetDir
-			if err := cmd.Run(); err == nil {
-				break // Both WordPress and database are ready
+		if err == nil {
+			outputStr := string(output)
+			// Check if both services are running
+			if strings.Contains(outputStr, wordpressService) && strings.Contains(outputStr, dbService) {
+				// Also check if MySQL is ready by testing WP-CLI connection
+				cmd = exec.Command("docker", "compose", "-f", dockerComposePath, "run", "-T", "--rm", "wpcli", "--allow-root", "db", "check")
+				cmd.Dir = targetDir
+				if err := cmd.Run(); err == nil {
+					break // Both WordPress and database are ready
+				}
 			}
 		}
 
@@ -515,7 +563,7 @@ func (w *WPPDeployer) installWordPress(sitename, targetDir string) error {
 
 	// Check if WordPress is already installed
 	fmt.Println("[•] Checking if WordPress is already installed...")
-	cmd := exec.Command("docker", "compose", "-f", dockerComposePath, "run", "--rm", "wpcli", "--allow-root", "core", "is-installed")
+	cmd := exec.Command("docker", "compose", "-f", dockerComposePath, "run", "-T", "--rm", "wpcli", "--allow-root", "core", "is-installed")
 	cmd.Dir = targetDir
 	if err := cmd.Run(); err == nil {
 		fmt.Println("[!] WordPress is already installed, skipping installation")
@@ -525,7 +573,7 @@ func (w *WPPDeployer) installWordPress(sitename, targetDir string) error {
 	// Install WordPress using the dedicated wpcli service
 	fmt.Println("[•] Installing WordPress core...")
 	url := fmt.Sprintf("http://%s.nshlog.com", sitename)
-	cmd = exec.Command("docker", "compose", "-f", dockerComposePath, "run", "--rm", "wpcli",
+	cmd = exec.Command("docker", "compose", "-f", dockerComposePath, "run", "-T", "--rm", "wpcli",
 		"--allow-root", "core", "install",
 		fmt.Sprintf("--url=%s", url),
 		fmt.Sprintf("--title=%s", sitename),

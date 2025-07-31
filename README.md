@@ -269,11 +269,13 @@ The server listens for and displays:
 **Automatic Deployment**: When push or PR events are received for repositories configured with `add-repo`, the system automatically:
 
 1. **Matches Repository**: Checks if the webhook repository matches a configured repo
-2. **Creates Site**: Generates site name as `username-repo-name-branch.nshlog.com`
+2. **Generates Random Site Name**: Creates a short 8-character random name (e.g., `a7x9k2m1`)
 3. **Clones Repository**: Downloads/updates code to `~/.wpp-deployer/repos/username/repo-name`
 4. **Runs Build**: Executes the configured build command
-5. **Deploys WordPress**: Creates/updates WordPress site
-6. **Installs Plugin**: Uses WP-CLI to install and activate the built plugin zip file
+5. **Deploys WordPress**: Creates/updates WordPress site with the random name
+6. **Installs Plugin**: Extracts plugin zip to WordPress plugins directory and activates it
+
+> **Note**: Sites are created with random short names instead of long repository-based names for better performance and DNS compatibility.
 
 > **Note**: Repositories not configured with `add-repo` will only display webhook events in the console without triggering deployments.
 
@@ -285,14 +287,15 @@ Example output:
          [+] Repository configured for deployment
          [+] Build: pnpm i && pnpm run export
          [+] Zip: packages/tableberg/tableberg.zip
-         [+] Creating site: frost-tableberg-main.nshlog.com
+         [+] Generated site name: a7x9k2m1
+         [+] Site URL: a7x9k2m1.nshlog.com
+         [+] For repo: frost/tableberg (branch: main)
          [+] Updating repository...
          [+] Cloning repository...
          [+] Setting up WordPress site...
-         [+] Creating new WordPress site: frost-tableberg-main
+         [+] Creating new WordPress site: a7x9k2m1
          [+] Running build command: pnpm i && pnpm run export
          [+] Installing WordPress plugin...
-         [+] Installing plugin: packages/tableberg/tableberg.zip
          [+] Plugin installed and activated successfully!
          [✔] Deployment completed successfully!
 
@@ -303,7 +306,9 @@ Example output:
          [+] Repository configured for deployment
          [+] Build: pnpm i && pnpm run export
          [+] Zip: packages/tableberg/tableberg.zip
-         [+] Creating site: frost-tableberg-feature-branch.nshlog.com
+         [+] Generated site name: b8y1l3n4
+         [+] Site URL: b8y1l3n4.nshlog.com
+         [+] For repo: frost/tableberg (branch: feature-branch)
          [+] Installing WordPress plugin...
          [+] Plugin installed and activated successfully!
          [✔] Deployment completed successfully!
@@ -347,6 +352,78 @@ wpp-deployer help
 wpp-deployer version
 ```
 
+## Troubleshooting
+
+### WordPress Container Readiness Timeout
+
+If you see: `WordPress container did not become ready within 60 seconds`
+
+This was caused by **extremely long Docker service names** (70+ characters) preventing proper DNS resolution within Docker networks.
+
+**Fixed in this version:**
+- **Shortened service names**: Uses first 10 characters of repo name for service identifiers  
+- **Maintained unique naming**: Each site still has unique services to prevent conflicts
+- **Preserved descriptive containers**: Container names remain descriptive for `docker ps`
+
+**Example transformation:**
+```yaml
+# OLD: Very long service names causing DNS timeouts
+services:
+  wordpress-permafrost06-simple-file-submission-plugin-wpp-test:
+    environment:
+      WORDPRESS_DB_HOST: wordpress-permafrost06-simple-file-submission-plugin-wpp-test-db
+
+# NEW: Short service names, descriptive containers
+services:
+  wordpress-simple-fil:                    # First 10 chars of repo name
+    container_name: wordpress-permafrost06-simple-file-submission-plugin-wpp-test-apache
+    environment:
+      WORDPRESS_DB_HOST: wordpress-simple-fil-db
+```
+
+### WP-CLI TTY Error in Webhook Deployments
+
+If you see: `the input device is not a TTY` during plugin installation or WP-CLI commands
+
+This happens when **webhook server runs WP-CLI commands** without an interactive terminal.
+
+**Fixed in this version:**
+- **Added `-T` flag**: All `docker compose run` commands now use `-T` to disable TTY allocation
+- **Background compatibility**: WP-CLI commands work properly in webhook server context
+- **No manual intervention**: Fully automated deployments without TTY requirements
+
+**Commands fixed:**
+```bash
+# Plugin installation
+docker compose run -T --rm wpcli plugin install plugin.zip --activate
+
+# WordPress core installation  
+docker compose run -T --rm wpcli --allow-root core install [options]
+
+# Database health checks
+docker compose run -T --rm wpcli --allow-root db check
+```
+
+### Nginx Server Names Hash Bucket Size Error
+
+If you encounter the error: `nginx: [emerg] could not build server_names_hash, you should increase server_names_hash_bucket_size: 64`
+
+This happens when you have many WordPress sites deployed. The solution is included automatically:
+
+- **Custom nginx.conf**: Includes `server_names_hash_bucket_size 128` setting
+- **Automatic Configuration**: New installations include the fix by default
+- **Existing Installations**: Run `wpp-deployer install` again to update configuration
+
+To manually fix existing installations:
+```bash
+# The install command will update your nginx configuration
+wpp-deployer install
+
+# Or manually restart nginx with the updated configuration
+cd ~/.wpp-deployer
+docker compose -f nginx-docker-compose.yml restart
+```
+
 ## Architecture
 
 The application creates the following structure in `~/.wpp-deployer`:
@@ -354,6 +431,7 @@ The application creates the following structure in `~/.wpp-deployer`:
 ```
 ~/.wpp-deployer/
 ├── nginx-docker-compose.yml    # Main Nginx container
+├── nginx.conf                  # Custom nginx config with optimizations
 ├── html/                       # Static files for main domain
 │   └── index.html
 ├── nginx-config/               # Nginx configurations
@@ -363,6 +441,7 @@ The application creates the following structure in `~/.wpp-deployer`:
 │   ├── docker-compose.yml.template
 │   ├── nginx-config.conf.template
 │   ├── nginx-docker-compose.yml.template
+│   ├── nginx.conf.template
 │   ├── wpp-deployer.conf.template
 │   └── index.html.template
 └── wordpress-*/               # Individual WordPress sites
@@ -386,4 +465,6 @@ Templates are stored in `~/.wpp-deployer/templates/` and can be modified after i
 - `docker-compose.yml.template` - WordPress site container configuration
 - `nginx-config.conf.template` - Nginx reverse proxy configuration per site
 - `nginx-docker-compose.yml.template` - Main Nginx container configuration
-- `
+- `nginx.conf.template` - Main nginx configuration with performance optimizations
+- `wpp-deployer.conf.template` - Main domain and webhook proxy configuration
+- `index.html.template` - Default static HTML page

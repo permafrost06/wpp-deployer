@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
@@ -15,6 +16,16 @@ import (
 	"strings"
 	"time"
 )
+
+// generateRandomSiteName creates a random 8-character site name for webhook deployments
+func generateRandomSiteName() string {
+	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+	result := make([]byte, 8)
+	for i := range result {
+		result[i] = chars[rand.Intn(len(chars))]
+	}
+	return string(result)
+}
 
 type GitHubPayload struct {
 	Action      string      `json:"action"`
@@ -54,7 +65,11 @@ type WebhookServer struct {
 	deployer *WPPDeployer
 }
 
+// NewWebhookServer creates a new webhook server instance
 func NewWebhookServer(port, secret string, deployer *WPPDeployer) *WebhookServer {
+	// Initialize random seed for site name generation
+	rand.Seed(time.Now().UnixNano())
+
 	return &WebhookServer{
 		port:     port,
 		secret:   secret,
@@ -184,31 +199,19 @@ func (ws *WebhookServer) handleRepositoryDeployment(repoFullName, branch, cloneU
 	fmt.Printf("         [+] Build: %s\n", repoConfig.BuildCommand)
 	fmt.Printf("         [+] Zip: %s\n", repoConfig.ZipLocation)
 
-	siteName := ws.createSiteName(repoFullName, branch)
-	fmt.Printf("         [+] Creating site: %s.nshlog.com\n", siteName)
+	// Generate random short site name instead of long repo-based name
+	randomSiteName := generateRandomSiteName()
+	fmt.Printf("         [+] Generated site name: %s\n", randomSiteName)
+	fmt.Printf("         [+] Site URL: %s.nshlog.com\n", randomSiteName)
+	fmt.Printf("         [+] For repo: %s (branch: %s)\n", repoFullName, branch)
 
-	if err := ws.deployRepository(siteName, repoFullName, branch, cloneURL, repoConfig); err != nil {
+	if err := ws.deployRepository(randomSiteName, repoFullName, branch, cloneURL, repoConfig); err != nil {
 		fmt.Printf("         [!] Deployment failed: %v\n", err)
 		return
 	}
 
 	fmt.Printf("         [✔] Deployment completed successfully!\n")
 	fmt.Println()
-}
-
-func (ws *WebhookServer) createSiteName(repoFullName, branch string) string {
-	parts := strings.Split(repoFullName, "/")
-	if len(parts) != 2 {
-		return strings.ReplaceAll(repoFullName, "/", "-") + "-" + branch
-	}
-
-	username := parts[0]
-	repoName := parts[1]
-
-	cleanBranch := strings.ReplaceAll(branch, "/", "-")
-	cleanBranch = strings.ReplaceAll(cleanBranch, "_", "-")
-
-	return fmt.Sprintf("%s-%s-%s", username, repoName, cleanBranch)
 }
 
 func (ws *WebhookServer) deployRepository(siteName, repoFullName, branch, cloneURL string, config RepoConfig) error {
@@ -328,16 +331,15 @@ func (ws *WebhookServer) installPlugin(repoDir, zipLocation, siteName string) er
 		return fmt.Errorf("plugin zip file not found: %s", zipPath)
 	}
 
-	absZipPath, err := filepath.Abs(zipPath)
-	if err != nil {
-		return fmt.Errorf("failed to get absolute path for zip: %w", err)
-	}
+	// Get relative path from repos directory for the mounted volume
+	repoName := filepath.Base(filepath.Dir(repoDir))
+	mountedZipPath := filepath.Join("/repos", repoName, filepath.Base(repoDir), zipLocation)
 
 	siteDir := filepath.Join(ws.deployer.workDir, fmt.Sprintf("wordpress-%s", siteName))
 	dockerComposePath := filepath.Join(siteDir, "docker-compose.yml")
 
 	fmt.Printf("         [+] Installing plugin: %s\n", zipLocation)
-	cmd := exec.Command("docker", "compose", "-f", dockerComposePath, "run", "--rm", "wpcli", "plugin", "install", absZipPath, "--activate")
+	cmd := exec.Command("docker", "compose", "-f", dockerComposePath, "run", "-T", "--rm", "wpcli", "plugin", "install", mountedZipPath, "--activate")
 	cmd.Dir = siteDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
