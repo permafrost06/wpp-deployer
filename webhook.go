@@ -196,8 +196,7 @@ func (ws *WebhookServer) handleRepositoryDeployment(repoFullName, branch, cloneU
 	}
 
 	fmt.Printf("         [+] Repository configured for deployment\n")
-	fmt.Printf("         [+] Build: %s\n", repoConfig.BuildCommand)
-	fmt.Printf("         [+] Zip: %s\n", repoConfig.ZipLocation)
+	fmt.Printf("         [+] Script: %s\n", repoConfig.Script)
 
 	// Generate random short site name instead of long repo-based name
 	randomSiteName := generateRandomSiteName()
@@ -230,12 +229,12 @@ func (ws *WebhookServer) deployRepository(siteName, repoFullName, branch, cloneU
 		return fmt.Errorf("failed to create/update site: %w", err)
 	}
 
-	if err := ws.runBuildCommand(repoDir, config.BuildCommand); err != nil {
-		return fmt.Errorf("failed to run build command: %w", err)
+	if err := ws.createWPWrapper(repoDir, siteName); err != nil {
+		return fmt.Errorf("failed to create wp wrapper: %w", err)
 	}
 
-	if err := ws.installPlugin(repoDir, config.ZipLocation, siteName); err != nil {
-		return fmt.Errorf("failed to install plugin: %w", err)
+	if err := ws.runUserScript(repoDir, config.Script, repoFullName, siteName); err != nil {
+		return fmt.Errorf("failed to run user script: %w", err)
 	}
 
 	return nil
@@ -307,48 +306,44 @@ func (ws *WebhookServer) createOrUpdateSite(siteName string) error {
 	return nil
 }
 
-func (ws *WebhookServer) runBuildCommand(repoDir, buildCommand string) error {
-	fmt.Printf("         [+] Running build command: %s\n", buildCommand)
+func (ws *WebhookServer) createWPWrapper(repoDir, siteName string) error {
+	fmt.Printf("         [+] Creating wp wrapper script...\n")
 
-	cmd := exec.Command("bash", "-c", buildCommand)
-	cmd.Dir = repoDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	wrapperScript := fmt.Sprintf(`#!/bin/bash
+# wp wrapper - translates WP-CLI commands to Docker execution
+SITE_DIR="$HOME/.wpp-deployer/wordpress-%s"
+cd "$SITE_DIR"
+exec docker compose -f docker-compose.yml run -T --rm wpcli "$@"
+`, siteName)
 
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("build command failed: %w", err)
+	wpScript := filepath.Join(repoDir, "wp")
+	if err := os.WriteFile(wpScript, []byte(wrapperScript), 0755); err != nil {
+		return fmt.Errorf("failed to create wp wrapper: %w", err)
 	}
 
 	return nil
 }
 
-func (ws *WebhookServer) installPlugin(repoDir, zipLocation, siteName string) error {
-	fmt.Printf("         [+] Installing WordPress plugin...\n")
+func (ws *WebhookServer) runUserScript(repoDir, script, repoFullName, siteName string) error {
+	fmt.Printf("         [+] Running user script: %s\n", script)
 
-	zipPath := filepath.Join(repoDir, zipLocation)
-
-	if _, err := os.Stat(zipPath); os.IsNotExist(err) {
-		return fmt.Errorf("plugin zip file not found: %s", zipPath)
-	}
-
-	// Get relative path from repos directory for the mounted volume
-	repoName := filepath.Base(filepath.Dir(repoDir))
-	mountedZipPath := filepath.Join("/repos", repoName, filepath.Base(repoDir), zipLocation)
-
-	siteDir := filepath.Join(ws.deployer.workDir, fmt.Sprintf("wordpress-%s", siteName))
-	dockerComposePath := filepath.Join(siteDir, "docker-compose.yml")
-
-	fmt.Printf("         [+] Installing plugin: %s\n", zipLocation)
-	cmd := exec.Command("docker", "compose", "-f", dockerComposePath, "run", "-T", "--rm", "wpcli", "plugin", "install", mountedZipPath, "--activate")
-	cmd.Dir = siteDir
+	cmd := exec.Command("bash", "-c", script)
+	cmd.Dir = repoDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
+	// Set environment variables
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("WP_SITE_NAME=%s", siteName),
+		fmt.Sprintf("REPO_PATH=/repos/%s", repoFullName),
+		fmt.Sprintf("PATH=%s:%s", repoDir, os.Getenv("PATH")), // Add repo dir to PATH so 'wp' command works
+	)
+
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("WP-CLI plugin install failed: %w", err)
+		return fmt.Errorf("user script failed: %w", err)
 	}
 
-	fmt.Printf("         [+] Plugin installed and activated successfully!\n")
+	fmt.Printf("         [+] User script completed successfully!\n")
 	return nil
 }
 

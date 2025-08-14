@@ -58,9 +58,8 @@ func generateShortName(sitename string) string {
 }
 
 type RepoConfig struct {
-	Repo         string `json:"repo"`
-	BuildCommand string `json:"build_command"`
-	ZipLocation  string `json:"zip_location"`
+	Repo   string `json:"repo"`
+	Script string `json:"script"`
 }
 
 type WPPDeployer struct {
@@ -126,15 +125,12 @@ func (w *WPPDeployer) saveRepoConfigs(configs map[string]RepoConfig) error {
 	return nil
 }
 
-func (w *WPPDeployer) AddRepo(repo, buildCommand, zipLocation string) error {
+func (w *WPPDeployer) AddRepo(repo, script string) error {
 	if repo == "" {
 		return fmt.Errorf("repository name is required")
 	}
-	if buildCommand == "" {
-		return fmt.Errorf("build command is required")
-	}
-	if zipLocation == "" {
-		return fmt.Errorf("zip location is required")
+	if script == "" {
+		return fmt.Errorf("script is required")
 	}
 
 	// Validate repo format (should be username/repo-name)
@@ -153,9 +149,8 @@ func (w *WPPDeployer) AddRepo(repo, buildCommand, zipLocation string) error {
 	}
 
 	configs[repo] = RepoConfig{
-		Repo:         repo,
-		BuildCommand: buildCommand,
-		ZipLocation:  zipLocation,
+		Repo:   repo,
+		Script: script,
 	}
 
 	if err := w.saveRepoConfigs(configs); err != nil {
@@ -164,8 +159,7 @@ func (w *WPPDeployer) AddRepo(repo, buildCommand, zipLocation string) error {
 
 	fmt.Printf("[✔] Repository configuration added:\n")
 	fmt.Printf("    Repository: %s\n", repo)
-	fmt.Printf("    Build Command: %s\n", buildCommand)
-	fmt.Printf("    Zip Location: %s\n", zipLocation)
+	fmt.Printf("    Script: %s\n", script)
 
 	return nil
 }
@@ -184,8 +178,7 @@ func (w *WPPDeployer) ListRepos() error {
 	fmt.Printf("Configured repositories (%d):\n\n", len(configs))
 	for repo, config := range configs {
 		fmt.Printf("  %s\n", repo)
-		fmt.Printf("    Build: %s\n", config.BuildCommand)
-		fmt.Printf("    Zip:   %s\n", config.ZipLocation)
+		fmt.Printf("    Script: %s\n", config.Script)
 		fmt.Println()
 	}
 
@@ -604,7 +597,7 @@ Commands:
   exec [-r] <sitename> <args...>    Run docker-compose command on specific site
   exec-all [-r] <args...>           Run docker-compose command on all sites
   listen [--port PORT] [--secret SECRET]  Start webhook server for GitHub events
-  add-repo <username/repo> <build-command> <zip-location>  Add a new repository for deployment
+  add-repo <username/repo> <script>  Add a new repository for deployment
   list-repos                          List all configured repositories
 
 Options:
@@ -623,10 +616,11 @@ Examples:
   %s exec-all -r restart
   %s exec-all ps
   %s listen --port 3000 --secret mysecret
-  %s add-repo myuser/myapp 'pnpm i && pnpm run export' packages/app/dist.zip
+  %s add-repo myuser/myapp 'npm run build && wp plugin install \\$REPO_PATH/dist/plugin.zip --activate'
+  %s add-repo myuser/site 'npm run build && wp theme install \\$REPO_PATH/dist/theme.zip --activate'
   %s list-repos
 
-`, appName, version, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName)
+`, appName, version, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName, appName)
 }
 
 func main() {
@@ -753,18 +747,18 @@ func main() {
 		}
 
 	case "add-repo":
-		if len(os.Args) < 5 {
-			fmt.Println("Error: add-repo requires repository, build command, and zip location")
-			fmt.Println("Usage: wpp-deployer add-repo <username/repo> <build-command> <zip-location>")
-			fmt.Println("Example: wpp-deployer add-repo myuser/myapp 'pnpm i && pnpm run export' packages/app/dist.zip")
+		if len(os.Args) < 4 {
+			fmt.Println("Error: add-repo requires repository and script")
+			fmt.Println("Usage: wpp-deployer add-repo <username/repo> <script>")
+			fmt.Println("Example: wpp-deployer add-repo myuser/myapp 'npm run build && wp plugin install \\$REPO_PATH/dist/plugin.zip --activate'")
+			fmt.Println("Example: wpp-deployer add-repo myuser/site 'npm run build && wp theme install \\$REPO_PATH/dist/theme.zip --activate && wp db import \\$REPO_PATH/data.sql'")
 			os.Exit(1)
 		}
 
 		repo := os.Args[2]
-		buildCommand := os.Args[3]
-		zipLocation := os.Args[4]
+		script := os.Args[3]
 
-		if err := deployer.AddRepo(repo, buildCommand, zipLocation); err != nil {
+		if err := deployer.AddRepo(repo, script); err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
