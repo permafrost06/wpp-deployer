@@ -59,6 +59,11 @@ type Repository struct {
 	CloneURL string `json:"clone_url"`
 }
 
+type DeploymentInfo struct {
+	Branch string `json:"branch"`
+	Link   string `json:"link"`
+}
+
 type WebhookServer struct {
 	port     string
 	secret   string
@@ -237,6 +242,10 @@ func (ws *WebhookServer) deployRepository(siteName, repoFullName, branch, cloneU
 		return fmt.Errorf("failed to run user script: %w", err)
 	}
 
+	if err := ws.trackDeployment(repoFullName, branch, siteName); err != nil {
+		return fmt.Errorf("failed to track deployment: %w", err)
+	}
+
 	return nil
 }
 
@@ -344,6 +353,95 @@ func (ws *WebhookServer) runUserScript(repoDir, script, repoFullName, siteName s
 	}
 
 	fmt.Printf("         [+] User script completed successfully!\n")
+	return nil
+}
+
+func (ws *WebhookServer) getDeploymentsFilePath() string {
+	return filepath.Join(ws.deployer.workDir, "html", "deployments.json")
+}
+
+func (ws *WebhookServer) loadDeployments() (map[string][]DeploymentInfo, error) {
+	deploymentsPath := ws.getDeploymentsFilePath()
+	deployments := make(map[string][]DeploymentInfo)
+
+	// If file doesn't exist, return empty map
+	if _, err := os.Stat(deploymentsPath); os.IsNotExist(err) {
+		return deployments, nil
+	}
+
+	data, err := os.ReadFile(deploymentsPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read deployments file: %w", err)
+	}
+
+	if err := json.Unmarshal(data, &deployments); err != nil {
+		return nil, fmt.Errorf("failed to parse deployments file: %w", err)
+	}
+
+	return deployments, nil
+}
+
+func (ws *WebhookServer) saveDeployments(deployments map[string][]DeploymentInfo) error {
+	deploymentsPath := ws.getDeploymentsFilePath()
+
+	// Ensure html directory exists
+	htmlDir := filepath.Dir(deploymentsPath)
+	if err := os.MkdirAll(htmlDir, 0755); err != nil {
+		return fmt.Errorf("failed to create html directory: %w", err)
+	}
+
+	data, err := json.MarshalIndent(deployments, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal deployments: %w", err)
+	}
+
+	if err := os.WriteFile(deploymentsPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write deployments file: %w", err)
+	}
+
+	return nil
+}
+
+func (ws *WebhookServer) trackDeployment(repoFullName, branch, siteName string) error {
+	fmt.Printf("         [+] Tracking deployment in deployments.json...\n")
+
+	deployments, err := ws.loadDeployments()
+	if err != nil {
+		return fmt.Errorf("failed to load deployments: %w", err)
+	}
+
+	// Create the deployment info
+	deploymentInfo := DeploymentInfo{
+		Branch: branch,
+		Link:   fmt.Sprintf("http://%s.nshlog.com/", siteName),
+	}
+
+	// Get existing deployments for this repo
+	repoDeployments := deployments[repoFullName]
+
+	// Check if this branch already exists and update it, or add new one
+	found := false
+	for i, existing := range repoDeployments {
+		if existing.Branch == branch {
+			repoDeployments[i] = deploymentInfo
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		repoDeployments = append(repoDeployments, deploymentInfo)
+	}
+
+	// Update the deployments map
+	deployments[repoFullName] = repoDeployments
+
+	// Save to file
+	if err := ws.saveDeployments(deployments); err != nil {
+		return fmt.Errorf("failed to save deployments: %w", err)
+	}
+
+	fmt.Printf("         [+] Deployment tracked: %s -> %s\n", branch, deploymentInfo.Link)
 	return nil
 }
 
