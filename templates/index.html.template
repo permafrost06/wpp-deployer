@@ -155,7 +155,7 @@
           
           const link = document.createElement('a');
           link.className = 'link';
-          link.href = deployment.link;
+          link.href = deployment.link + "wp-admin/";
           link.target = '_blank';
           link.textContent = deployment.link;
           
