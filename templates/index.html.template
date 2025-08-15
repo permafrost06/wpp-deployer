@@ -1,9 +1,178 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>wpp deployer</title>
+  <title>WPP Deployer</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 40px;
+      background: #f5f5f5;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    h1 {
+      text-align: center;
+      color: #333;
+    }
+    .loading {
+      text-align: center;
+      color: #666;
+      margin: 40px 0;
+    }
+    .repo {
+      background: white;
+      margin: 20px 0;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .repo-name {
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 10px;
+      color: #333;
+    }
+    .deployment {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid #eee;
+    }
+    .deployment:last-child {
+      border-bottom: none;
+    }
+    .branch {
+      background: #e3f2fd;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 14px;
+      color: #1976d2;
+    }
+    .link {
+      color: #1976d2;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .link:hover {
+      text-decoration: underline;
+    }
+    .refresh-btn {
+      background: #1976d2;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-bottom: 20px;
+    }
+    .refresh-btn:hover {
+      background: #1565c0;
+    }
+    .error {
+      color: #d32f2f;
+      background: #ffebee;
+      padding: 15px;
+      border-radius: 4px;
+      margin: 20px 0;
+    }
+    .empty {
+      text-align: center;
+      color: #666;
+      padding: 40px;
+    }
+  </style>
 </head>
 <body>
-  <h1>Hello, wpp deployer!</h1>
+  <div class="container">
+    <h1>WPP Deployer</h1>
+    
+    <button class="refresh-btn" onclick="loadDeployments()">Refresh</button>
+    
+    <div id="loading" class="loading">Loading deployments...</div>
+    <div id="error" class="error" style="display: none;"></div>
+    <div id="empty" class="empty" style="display: none;">No deployments found</div>
+    <div id="deployments"></div>
+  </div>
+
+  <script>
+    async function loadDeployments() {
+      const loading = document.getElementById('loading');
+      const error = document.getElementById('error');
+      const empty = document.getElementById('empty');
+      const deployments = document.getElementById('deployments');
+      
+      // Reset state
+      loading.style.display = 'block';
+      error.style.display = 'none';
+      empty.style.display = 'none';
+      deployments.innerHTML = '';
+      
+      try {
+        const response = await fetch('/deployments.json');
+        if (!response.ok) {
+          throw new Error('Failed to load deployments');
+        }
+        
+        const data = await response.json();
+        loading.style.display = 'none';
+        
+        if (Object.keys(data).length === 0) {
+          empty.style.display = 'block';
+          return;
+        }
+        
+        renderDeployments(data);
+        
+      } catch (err) {
+        loading.style.display = 'none';
+        error.style.display = 'block';
+        error.textContent = err.message;
+      }
+    }
+    
+    function renderDeployments(data) {
+      const container = document.getElementById('deployments');
+      
+      Object.entries(data).forEach(([repo, branches]) => {
+        const repoDiv = document.createElement('div');
+        repoDiv.className = 'repo';
+        
+        const repoName = document.createElement('div');
+        repoName.className = 'repo-name';
+        repoName.textContent = repo;
+        repoDiv.appendChild(repoName);
+        
+        branches.forEach(deployment => {
+          const deploymentDiv = document.createElement('div');
+          deploymentDiv.className = 'deployment';
+          
+          const branch = document.createElement('span');
+          branch.className = 'branch';
+          branch.textContent = deployment.branch;
+          
+          const link = document.createElement('a');
+          link.className = 'link';
+          link.href = deployment.link;
+          link.target = '_blank';
+          link.textContent = deployment.link;
+          
+          deploymentDiv.appendChild(branch);
+          deploymentDiv.appendChild(link);
+          repoDiv.appendChild(deploymentDiv);
+        });
+        
+        container.appendChild(repoDiv);
+      });
+    }
+    
+    // Load on page load
+    loadDeployments();
+    
+    // Auto-refresh every 30 seconds
+    setInterval(loadDeployments, 30000);
+  </script>
 </body>
 </html> 
