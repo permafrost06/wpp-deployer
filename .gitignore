@@ -28,3 +28,4 @@ nginx-config/*.conf
 wordpress-*/
 
 build/
+wpp-deployer
