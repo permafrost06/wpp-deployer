@@ -2,14 +2,14 @@ BINARY_NAME=wpp-deployer
 BUILD_DIR=build
 INSTALL_PATH=/usr/local/bin
 
-.PHONY: all build clean install install-completions install-service uninstall uninstall-completions test
+.PHONY: all build clean install install-completions uninstall uninstall-completions test
 
 all: build
 
 build:
 	@echo "Building $(BINARY_NAME)..."
 	@mkdir -p $(BUILD_DIR)
-	go build -o $(BUILD_DIR)/$(BINARY_NAME) main.go webhook.go
+	go build -o $(BUILD_DIR)/$(BINARY_NAME) main.go
 
 install: build
 	@echo "Installing $(BINARY_NAME) to $(INSTALL_PATH)..."
@@ -20,11 +20,6 @@ install-completions:
 	@echo "Installing shell completions..."
 	chmod +x install-completions.sh
 	./install-completions.sh
-
-install-service:
-	@echo "Installing webhook service..."
-	chmod +x install-service.sh
-	sudo ./install-service.sh
 
 install-all: install install-completions install-service
 	@echo "Complete installation finished!"
@@ -59,7 +54,6 @@ help:
 	@echo "  build              - Build the binary"
 	@echo "  install            - Install the binary to $(INSTALL_PATH) (requires sudo)"
 	@echo "  install-completions - Install shell completion scripts"
-	@echo "  install-service    - Install webhook systemd service"
 	@echo "  install-all        - Install binary, completions, and service"
 	@echo "  uninstall          - Remove the binary from $(INSTALL_PATH) (requires sudo)"
 	@echo "  uninstall-completions - Remove shell completion scripts"

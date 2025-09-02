@@ -52,18 +52,7 @@ _wpp-deployer() {
                         '(-r --reload)'{-r,--reload}'[Reload nginx after command]' \
                         '*: :_describe "docker-compose commands" docker_compose_commands'
                     ;;
-                listen)
-                    _arguments \
-                        '(--port -p)'{--port,-p}'[Webhook server port]:port:' \
-                        '(--secret -s)'{--secret,-s}'[GitHub webhook secret]:secret:'
-                    ;;
-                add-repo)
-                    _arguments \
-                        '1:repository (username/repo):' \
-                        '2:build command:' \
-                        '3:zip location:'
-                    ;;
-                list|list-repos|install|help|version)
+                list|install|help|version)
                     # These commands take no arguments
                     ;;
             esac
@@ -79,9 +68,7 @@ _wpp_deployer_commands() {
         'list:List all WordPress sites'
         'exec:Run docker-compose command on specific site'
         'exec-all:Run docker-compose command on all sites'
-        'listen:Start webhook server for GitHub events'
-        'add-repo:Add a new repository configuration'
-        'list-repos:List all configured repositories'
+
         'help:Show help message'
         'version:Show version information'
     )

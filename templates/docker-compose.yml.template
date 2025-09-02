@@ -36,7 +36,6 @@ services:
       - wordpress-{{.Sitename}}
     volumes:
       - ./wp-data:/var/www/html
-      - ../repos:/repos
     networks:
       - wpp-deployer-network
     entrypoint: wp
