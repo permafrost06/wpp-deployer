@@ -30,12 +30,13 @@ services:
     restart: unless-stopped
 
   wpcli:
-    image: wordpress:cli
+    image: wpcli-freemius
     container_name: wordpress-{{.Sitename}}-wpcli
     depends_on:
       - wordpress-{{.Sitename}}
     volumes:
       - ./wp-data:/var/www/html
+      - ../docker-build-output/{{.Sitename}}:/zips
     networks:
       - wpp-deployer-network
     entrypoint: wp
@@ -44,6 +45,7 @@ services:
       WORDPRESS_DB_NAME: {{.Sitename}}
       WORDPRESS_DB_USER: {{.Sitename}}
       WORDPRESS_DB_PASSWORD: {{.Sitename}}pass
+      HOME: /home/www-data
     user: "33:33"
 
 volumes:
