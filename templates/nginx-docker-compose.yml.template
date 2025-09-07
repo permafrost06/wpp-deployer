@@ -4,10 +4,12 @@ services:
     container_name: wpp-deployer-nginx
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./html:/usr/share/nginx/html:ro
       - ./nginx-config:/etc/nginx/conf.d:ro
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     networks:
       - wpp-deployer-network
     restart: unless-stopped
