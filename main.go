@@ -135,6 +135,11 @@ func (w *WPPDeployer) Install() error {
 	fmt.Printf("[✔] Installation completed successfully!\n")
 	fmt.Printf("    Work directory: %s\n", w.workDir)
 
+	fmt.Println("[+] Setting up SSL certificates...")
+	if err := w.setupSSL(); err != nil {
+		return fmt.Errorf("failed to setup SSL: %w", err)
+	}
+
 	fmt.Println("[+] Creating Docker network...")
 	cmd := exec.Command("docker", "network", "create", "wpp-deployer-network")
 	if err := cmd.Run(); err != nil {
@@ -148,6 +153,77 @@ func (w *WPPDeployer) Install() error {
 		return fmt.Errorf("failed to start nginx container: %w", err)
 	}
 
+	fmt.Println("[+] Generating Let's Encrypt certificates...")
+	if err := w.generateLetsEncryptCert(); err != nil {
+		fmt.Printf("[!] Certificate generation failed: %v\n", err)
+		fmt.Println("[!] You can try again later with: wpp-deployer renew-cert")
+		fmt.Println("[!] Continuing with installation...")
+	}
+
+	return nil
+}
+
+func (w *WPPDeployer) setupSSL() error {
+	fmt.Println("[+] Setting up Let's Encrypt SSL certificates...")
+
+	sslDir := filepath.Join(w.workDir, "ssl")
+	if err := os.MkdirAll(sslDir, 0755); err != nil {
+		return fmt.Errorf("failed to create SSL directory: %w", err)
+	}
+
+	// Create webroot directory for certbot
+	webrootDir := filepath.Join(sslDir, ".well-known", "acme-challenge")
+	if err := os.MkdirAll(webrootDir, 0755); err != nil {
+		return fmt.Errorf("failed to create webroot directory: %w", err)
+	}
+
+	fmt.Println("[+] SSL setup complete. Certificates will be generated when nginx starts.")
+	fmt.Println("[!] Make sure your domain DNS points to this server before running install.")
+	return nil
+}
+
+func (w *WPPDeployer) generateLetsEncryptCert() error {
+	fmt.Println("[+] Generating Let's Encrypt certificates...")
+
+	// Check if certificates already exist
+	letsencryptDir := filepath.Join(w.workDir, "letsencrypt", "live", "nshlog.com")
+	if _, err := os.Stat(letsencryptDir); err == nil {
+		fmt.Println("[!] Let's Encrypt certificates already exist, skipping generation")
+		return nil
+	}
+
+	// Start nginx first to serve the webroot
+	fmt.Println("[+] Starting nginx for certificate validation...")
+	cmd := exec.Command("docker", "compose", "-f", filepath.Join(w.workDir, "nginx-docker-compose.yml"), "up", "-d", "nginx")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to start nginx: %w", err)
+	}
+
+	// Wait a moment for nginx to start
+	time.Sleep(5 * time.Second)
+
+	// Generate certificates using certbot
+	fmt.Println("[+] Requesting certificates from Let's Encrypt...")
+	cmd = exec.Command("docker", "compose", "-f", filepath.Join(w.workDir, "nginx-docker-compose.yml"), "run", "--rm", "certbot")
+	if err := cmd.Run(); err != nil {
+		fmt.Println("[!] Certificate generation failed. This might be due to DNS not pointing to this server.")
+		fmt.Println("[!] You can try again later with: wpp-deployer renew-cert")
+		return fmt.Errorf("failed to generate certificates: %w", err)
+	}
+
+	fmt.Println("[✔] Let's Encrypt certificates generated successfully")
+	return nil
+}
+
+func (w *WPPDeployer) renewLetsEncryptCert() error {
+	fmt.Println("[+] Renewing Let's Encrypt certificates...")
+
+	cmd := exec.Command("docker", "compose", "-f", filepath.Join(w.workDir, "nginx-docker-compose.yml"), "run", "--rm", "certbot", "renew")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to renew certificates: %w", err)
+	}
+
+	fmt.Println("[✔] Certificates renewed successfully")
 	return nil
 }
 
@@ -441,7 +517,7 @@ func (w *WPPDeployer) installWordPress(sitename, targetDir string) error {
 
 	// Install WordPress using the dedicated wpcli service
 	fmt.Println("[•] Installing WordPress core...")
-	url := fmt.Sprintf("http://%s.%s", sitename, domain)
+	url := fmt.Sprintf("https://%s.%s", sitename, domain)
 	adminEmail := fmt.Sprintf("admin@%s", domain)
 	cmd = exec.Command("docker", "compose", "-f", dockerComposePath, "run", "-T", "--rm", "wpcli",
 		"--allow-root", "core", "install",
@@ -471,6 +547,7 @@ Commands:
   deploy <sitename>                 Deploy a new WordPress site
   delete <sitename>                 Delete an existing WordPress site
   list                              List all WordPress sites
+  renew-cert                        Renew Let's Encrypt SSL certificates
   exec [-r] <sitename> <args...>    Run docker-compose command on specific site
   exec-all [-r] <args...>           Run docker-compose command on all sites
 
@@ -598,6 +675,12 @@ func main() {
 		}
 		for _, sitename := range sites {
 			fmt.Println(sitename)
+		}
+
+	case "renew-cert":
+		if err := deployer.renewLetsEncryptCert(); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
 		}
 
 	case "help", "-h", "--help":

@@ -4,13 +4,33 @@ services:
     container_name: wpp-deployer-nginx
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./html:/usr/share/nginx/html:ro
       - ./nginx-config:/etc/nginx/conf.d:ro
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/ssl/certs:ro
+      - ./ssl:/etc/ssl/private:ro
+      - ./ssl:/var/www/certbot
+      - letsencrypt:/etc/letsencrypt:ro
     networks:
       - wpp-deployer-network
     restart: unless-stopped
+
+  certbot:
+    image: certbot/certbot
+    container_name: wpp-deployer-certbot
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - ./ssl:/var/www/certbot
+    networks:
+      - wpp-deployer-network
+    command: certonly --webroot --webroot-path=/var/www/certbot --email admin@nshlog.com --agree-tos --no-eff-email -d nshlog.com -d *.nshlog.com
+    depends_on:
+      - nginx
+
+volumes:
+  letsencrypt:
 
 networks:
   wpp-deployer-network:

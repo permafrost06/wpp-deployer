@@ -4,13 +4,18 @@ services:
     container_name: wordpress-{{.Sitename}}-apache
     depends_on:
       - wordpress-{{.Sitename}}-db
+    ports:
+      - "443"
     environment:
       WORDPRESS_DB_HOST: wordpress-{{.Sitename}}-db
       WORDPRESS_DB_NAME: {{.Sitename}}
       WORDPRESS_DB_USER: {{.Sitename}}
       WORDPRESS_DB_PASSWORD: {{.Sitename}}pass
+      WORDPRESS_HTTPS: "1"
     volumes:
       - ./wp-data:/var/www/html
+      - ../ssl:/etc/ssl/certs:ro
+      - ../ssl:/etc/ssl/private:ro
     networks:
       - wpp-deployer-network
     restart: unless-stopped
