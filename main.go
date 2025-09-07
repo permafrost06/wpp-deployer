@@ -16,6 +16,7 @@ import (
 const (
 	appName = "wpp-deployer"
 	version = "1.0.0"
+	domain  = "nshlog.com"
 )
 
 // Template file names
@@ -30,6 +31,7 @@ const (
 
 type TemplateData struct {
 	Sitename string
+	Domain   string
 }
 
 type WPPDeployer struct {
@@ -103,21 +105,24 @@ func (w *WPPDeployer) Install() error {
 		return fmt.Errorf("failed to load index.html template: %w", err)
 	}
 
-	mainNginxConfigContent, err := w.loadTemplate(mainNginxConfigFile)
-	if err != nil {
-		return fmt.Errorf("failed to load main nginx config template: %w", err)
-	}
-
 	nginxMainConfigContent, err := w.loadTemplate(nginxMainConfigFile)
 	if err != nil {
 		return fmt.Errorf("failed to load nginx main config template: %w", err)
 	}
 
+	tmplData := TemplateData{
+		Domain: domain,
+	}
+
+	nginxConfigPath := filepath.Join(w.workDir, "nginx-config", "wpp-deployer.conf")
+	if err := w.createFileFromTemplate(mainNginxConfigFile, nginxConfigPath, tmplData); err != nil {
+		return fmt.Errorf("failed to create main nginx config: %w", err)
+	}
+
 	files := map[string]string{
-		"nginx-docker-compose.yml":       nginxDockerComposeContent,
-		"html/index.html":                indexHTMLContent,
-		"nginx-config/wpp-deployer.conf": mainNginxConfigContent,
-		"nginx.conf":                     nginxMainConfigContent,
+		"nginx-docker-compose.yml": nginxDockerComposeContent,
+		"html/index.html":          indexHTMLContent,
+		"nginx.conf":               nginxMainConfigContent,
 	}
 
 	for filePath, content := range files {
@@ -147,7 +152,7 @@ func (w *WPPDeployer) Install() error {
 }
 
 func (w *WPPDeployer) Deploy(sitename string) error {
-	domain := fmt.Sprintf("%s.nshlog.com", sitename)
+	domain := fmt.Sprintf("%s.%s", sitename, domain)
 	targetDir := filepath.Join(w.workDir, fmt.Sprintf("wordpress-%s", sitename))
 	nginxConfig := filepath.Join(w.workDir, "nginx-config", fmt.Sprintf("%s.conf", sitename))
 
@@ -169,6 +174,7 @@ func (w *WPPDeployer) Deploy(sitename string) error {
 
 	tmplData := TemplateData{
 		Sitename: sitename,
+		Domain:   domain,
 	}
 
 	dockerComposePath := filepath.Join(targetDir, "docker-compose.yml")
@@ -435,14 +441,15 @@ func (w *WPPDeployer) installWordPress(sitename, targetDir string) error {
 
 	// Install WordPress using the dedicated wpcli service
 	fmt.Println("[•] Installing WordPress core...")
-	url := fmt.Sprintf("http://%s.nshlog.com", sitename)
+	url := fmt.Sprintf("http://%s.%s", sitename, domain)
+	adminEmail := fmt.Sprintf("admin@%s", domain)
 	cmd = exec.Command("docker", "compose", "-f", dockerComposePath, "run", "-T", "--rm", "wpcli",
 		"--allow-root", "core", "install",
 		fmt.Sprintf("--url=%s", url),
 		fmt.Sprintf("--title=%s", sitename),
 		"--admin_user=outmatch-underdog",
 		"--admin_password=7E3cdGT0EyucyA",
-		"--admin_email=admin@nshlog.com")
+		fmt.Sprintf("--admin_email=%s", adminEmail))
 	cmd.Dir = targetDir
 
 	if err := cmd.Run(); err != nil {

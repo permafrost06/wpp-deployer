@@ -1,6 +1,6 @@
 server {
     listen 80;
-    server_name nshlog.com;
+    server_name {{.Domain}};
 
     root /usr/share/nginx/html;
     index index.html;
