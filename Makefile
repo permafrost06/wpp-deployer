@@ -21,7 +21,7 @@ install-completions:
 	chmod +x install-completions.sh
 	./install-completions.sh
 
-install-all: install install-completions install-service
+install-all: install install-completions
 	@echo "Complete installation finished!"
 
 uninstall:
@@ -54,7 +54,7 @@ help:
 	@echo "  build              - Build the binary"
 	@echo "  install            - Install the binary to $(INSTALL_PATH) (requires sudo)"
 	@echo "  install-completions - Install shell completion scripts"
-	@echo "  install-all        - Install binary, completions, and service"
+	@echo "  install-all        - Install binary and completions"
 	@echo "  uninstall          - Remove the binary from $(INSTALL_PATH) (requires sudo)"
 	@echo "  uninstall-completions - Remove shell completion scripts"
 	@echo "  uninstall-all      - Remove binary and completions"
