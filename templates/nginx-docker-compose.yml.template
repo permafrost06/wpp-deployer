@@ -14,6 +14,19 @@ services:
       - wpp-deployer-network
     restart: unless-stopped
 
+  wpp-control-panel:
+    image: wpp-control-panel
+    container_name: wpp-control-panel
+    ports:
+      - "8080:8080"
+    environment:
+      - JWT_SECRET=11111111
+    volumes:
+      - ./deployments.db:/data/deployments.db
+    networks:
+      - wpp-deployer-network
+    restart: unless-stopped
+
 networks:
   wpp-deployer-network:
     external: true 
